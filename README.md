@@ -1,6 +1,10 @@
 # Studies_In_Programming
 Code &amp; Notes of programming languages studies
 
+# Notice: I will not be updating The C++ Programming Language at least until the end of the next week.
+# I have some work to do on my Master's, because my classes are resuming from today. BUT, I will be
+# continuing with The Rust Programming Language normally. Thanks for the understanding.
+
 I only update The C++ Programming Language code & notes at mondays and wednesdays!
 
 Rust: I will update every weekday!
