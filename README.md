@@ -1,7 +1,7 @@
 # Studies_In_Programming
 Code &amp; Notes of programming languages studies
 
-# A quick update: I will have to drop The C++ Programming Language. The Masters' is taking more effort and time than I expected. But I will keep up with The Rust Programming Language! 
+### A quick update: People, my undergraduate classes resumed. I WILL keep updating The Rust Programming Languange, I guarantee that I will not drop it, but I will need to change my current schedule. I will try to plan a new schedule this weekend. Sorry for the lack of updates this week.
 
 I only update The C++ Programming Language code & notes at mondays and wednesdays!
 
