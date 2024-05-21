@@ -3,11 +3,11 @@
 #include <functional>
 #include <cmath>
 
-// 3.2 - Modify the trapezoidal rule so that it will correctly estimate the integral, even
-// if comm_sz doesn’t evenly divide n. (You can still assume that n ≥ comm_sz.)
+//  3.3 Determine which of the variables in the trapezoidal rule program are local and
+//  which are global.
 
-/// ANSWER: if trapezoid_count / comm_sz rounds to the closest SMALLEST integer, just use std::ceil
-///         to get the correct trapezoid_count.
+/// ANSWER: check the code
+
 
 class mpi_input{
 
@@ -94,27 +94,41 @@ int main( ){
     MPI_Comm_rank( MPI_COMM_WORLD, &my_rank );
     MPI_Comm_size( MPI_COMM_WORLD, &comm_sz );
 
-    int trapezoid_count{ }, local_trapezoid{ };
-    double left_point{ }, right_point{ }, local_left{ }, local_right{ }, height{ }, local_trapezoid_double{ };
-    double total_estimate{ }, local_estimate{ };
+    int trapezoid_count{ };
+    double left_point{ }, right_point{ }, height{ };
 
     Get_Input( my_rank, comm_sz, &left_point, &right_point, &trapezoid_count );
 
     height = ( right_point - left_point ) / trapezoid_count;
-    local_trapezoid = std::ceil( static_cast<double>( trapezoid_count ) / static_cast<double>( comm_sz ) ); // this value gets truncated when comm_sz is not a divisor of trapezoid_count
-    local_trapezoid_double = std::ceil( static_cast<double>( trapezoid_count ) / static_cast<double>( comm_sz ) );
-
-    local_left = left_point + my_rank * local_trapezoid_double * height; //  this value is affected by the truncation
-    local_right = local_left + local_trapezoid_double * height; //  this value is also affected by the truncation
-    
-    local_estimate = Trapezoid( local_left, local_right, local_trapezoid, height, quadratic );
 
     if( my_rank != 0 ){
+
+        int local_trapezoid{ };
+        double local_left{ }, local_right{ }, local_trapezoid_double{ };
+        double local_estimate{ };
+
+        local_trapezoid = std::ceil( static_cast<double>( trapezoid_count ) / static_cast<double>( comm_sz ) );
+        local_trapezoid_double = std::ceil( static_cast<double>( trapezoid_count ) / static_cast<double>( comm_sz ) );
+
+        local_left = left_point + my_rank * local_trapezoid_double * height;
+        local_right = local_left + local_trapezoid_double * height;
+
+        local_estimate = Trapezoid( local_left, local_right, local_trapezoid, height, quadratic );
 
         MPI_Send( &local_estimate, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD );
     }
 
     else{
+
+        int local_trapezoid{ };
+        double local_left{ }, local_right{ }, local_trapezoid_double{ };
+        double local_estimate{ };
+        double total_estimate{ };
+
+        local_trapezoid = std::ceil( static_cast<double>( trapezoid_count ) / static_cast<double>( comm_sz ) );
+        local_trapezoid_double = std::ceil( static_cast<double>( trapezoid_count ) / static_cast<double>( comm_sz ) );
+
+        local_estimate = Trapezoid( local_left, local_right, local_trapezoid, height, quadratic );
 
         total_estimate = local_estimate;
 
