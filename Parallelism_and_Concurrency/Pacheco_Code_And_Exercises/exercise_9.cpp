@@ -108,5 +108,16 @@ int main( ){
     
     share_data( my_rank, comm_sz, left, right, MPI_COMM_WORLD );
     
+    double dot = dot_product( left, right );
+
+    double total_dot{ 0 };
+
+    MPI_Allreduce( &dot, &total_dot, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD );
+
+    if( my_rank == 0 ){
+
+        printf( "\nThe dot product is: %f", total_dot );
+    }
+
     MPI_Finalize( );
 }
