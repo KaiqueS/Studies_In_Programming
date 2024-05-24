@@ -43,15 +43,56 @@ std::vector<int> build_vector( int my_rank, int size ){
     return elements;
 }
 
-void share_data( std::vector<int>& values, MPI_Comm comm ){
+void share_data( int my_rank, std::vector<int> send ,std::vector<int>& receive, MPI_Comm comm ){
 
-     MPI_Bcast( values.data( ), values.size( ), MPI_INT, 0, MPI_COMM_WORLD );
+    //MPI_Bcast( send.data( ), send.size( ), MPI_INT, 0, MPI_COMM_WORLD );
+    if( my_rank == 0 ){
+
+        MPI_Scatter( send.data( ), receive.size( ), MPI_INT, receive.data( ), receive.size( ), MPI_INT, my_rank, comm );
+
+        send.clear( );
+    }
+
+    else{
+
+        MPI_Scatter( send.data( ), receive.size( ), MPI_INT, receive.data( ), receive.size( ), MPI_INT, 0, comm );
+    }
 }
 
 // I will perform a broadcast of the whole vector. But each process will only perform their respective partial sums
 void parallel_prefix_sum( int my_rank, std::vector<int>& elements ){
 
     
+}
+
+void add_scalar( int scalar, std::vector<int>& elements ){
+
+    for( std::vector<int>::size_type i = 0; i < elements.size( ); ++i ){
+
+        elements[ i ] += scalar;
+    }
+ }
+
+int next_node( int connection, int comm_size, int iteration ){
+
+    if( connection == comm_size - 1 ){
+
+        return connection;
+    }
+
+    else if( iteration == 0 ){
+
+        return connection + 1;
+    }
+
+    else{
+
+        connection = next_node( connection, comm_size, iteration - 1 );
+
+        //return next_node( connection, comm_size, iteration - 1 );
+
+        return connection;
+    }
 }
 
 // Represent the processes as nodes in a graph that is a tree. At the start, on the tree, each node has an edge
@@ -72,14 +113,35 @@ void parallel_prefix_sum_enhanced( int my_rank, int comm_sz, std::vector<int>& e
 
     local_partial = serial_prefix_sum( local_partial );
 
-    for( std::vector<int>::size_type i = 0; i < comm_sz - 1; ++i ){
+    for( std::vector<int>::size_type i = 1; i < comm_sz; ++i ){
 
         int value{ 0 };
 
-        MPI_Send( &local_partial[ local_partial.size( ) - 1 ], 1, MPI_INT, i + 1, 0, comm );
-        MPI_Recv( &value, 1, MPI_INT, i, 0, comm, MPI_STATUS_IGNORE );
+        value = local_partial[ local_partial.size( ) - 1 ];
 
+        int connection = next_node( my_rank, comm_sz, i );
 
+        if( my_rank == comm_sz - 1 ){
+
+            MPI_Recv( &value, 1, MPI_INT, next_node( connection - i, comm_sz, i ) - i, 0, comm, MPI_STATUS_IGNORE );
+            add_scalar( value, local_partial );
+        }
+
+        else if( my_rank == 0 ){
+
+            MPI_Send( &value, 1, MPI_INT, next_node( connection, comm_sz, i ), 0, comm );
+        }
+
+        else if( my_rank - i >= 0 ){
+
+            MPI_Recv( &value, 1, MPI_INT, next_node( connection - i, comm_sz, i ) - i, 0, comm, MPI_STATUS_IGNORE );
+
+            add_scalar( value, local_partial );
+
+            value = local_partial[ local_partial.size( ) - 1 ];
+
+            MPI_Send( &value, 1, MPI_INT, connection, 0, comm );
+        }        
     }
 }
 
@@ -115,9 +177,10 @@ int main( ){
 
     MPI_Bcast( &vec_size, 1, MPI_INT, 0, MPI_COMM_WORLD );
 
-    std::vector<int> elements = build_vector( my_rank, vec_size );
+    std::vector<int> send_elements = build_vector( my_rank, vec_size );
+    std::vector<int> receive_elements( send_elements.size( ) / comm_sz );
 
-    share_data( elements, MPI_COMM_WORLD );
+    share_data( my_rank, send_elements, receive_elements, MPI_COMM_WORLD );
 
     MPI_Finalize( );
 }
