@@ -51,7 +51,36 @@ void share_data( std::vector<int>& values, MPI_Comm comm ){
 // I will perform a broadcast of the whole vector. But each process will only perform their respective partial sums
 void parallel_prefix_sum( int my_rank, std::vector<int>& elements ){
 
+    
+}
 
+// Represent the processes as nodes in a graph that is a tree. At the start, on the tree, each node has an edge
+// from itself to the next node, except for the last node, which is linked to no other node. Assign to each process
+// ( vector size / comm_sz ) elements, and let each node perform a serial prefix sum on their own elements. After
+// this sum, send the GREATEST element from each node to the node its linked to. Sum this new element to its own
+// elements. Now, for nodes i - 1, i, and i + 1, remove the edges ( i - 1, i ) and ( i, i + 1 ), and add the edge
+// ( i - 1, i + 1 ), i.e., let node i - 1 be linked to its successor's successor. Repeat the sending of the greatest
+// element. Repeat edge deletion and insertion until the LAST node becomes the successor of the FIRST node. Do one
+// more sum. QED
+void parallel_prefix_sum_enhanced( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
+
+     int local_n = elements.size( ) / comm_sz;
+
+    std::vector<int> local_partial( local_n );
+
+    MPI_Scatter( elements.data( ), local_n, MPI_INT, local_partial.data( ), local_n, MPI_INT, 0, comm );
+
+    local_partial = serial_prefix_sum( local_partial );
+
+    for( std::vector<int>::size_type i = 0; i < comm_sz - 1; ++i ){
+
+        int value{ 0 };
+
+        MPI_Send( &local_partial[ local_partial.size( ) - 1 ], 1, MPI_INT, i + 1, 0, comm );
+        MPI_Recv( &value, 1, MPI_INT, i, 0, comm, MPI_STATUS_IGNORE );
+
+
+    }
 }
 
 // c. Suppose n = 2k for some positive integer k. Can you devise a serial algorithm and a parallelization of the serial algorithm
