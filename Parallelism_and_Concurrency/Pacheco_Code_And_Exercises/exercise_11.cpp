@@ -73,6 +73,26 @@ void add_scalar( int scalar, std::vector<int>& elements ){
     }
  }
 
+int previous_node( int connection, int comm_size, int iteration ){
+
+    if( connection == 0 ){
+
+        return connection;
+    }
+
+    else if( iteration == 0 ){
+
+        return connection - 1;
+    }
+
+    else{
+
+        connection = previous_node( connection - 1, comm_size, iteration - 1 );
+
+        return connection;
+    }
+}
+
 int next_node( int connection, int comm_size, int iteration ){
 
     if( connection == comm_size - 1 ){
@@ -87,13 +107,99 @@ int next_node( int connection, int comm_size, int iteration ){
 
     else{
 
-        connection = next_node( connection, comm_size, iteration - 1 );
+        connection = next_node( connection + 1, comm_size, iteration - 1 );
 
         //return next_node( connection, comm_size, iteration - 1 );
 
         return connection;
     }
 }
+
+
+class Comm_Node{
+
+public:
+
+    Comm_Node( int val, Comm_Node* pred, Comm_Node* succ ) : my_rank( val ), predecessor( pred ), successor( succ ){ }
+    ~Comm_Node( ){ }
+
+    void set_rank( int val ){ my_rank = val; }
+    void set_pred( Comm_Node* pred ){ predecessor = pred; };
+    void set_succ( Comm_Node* succ ){ successor = succ; }
+
+    int rank( ){ return my_rank; }
+    Comm_Node* pred( ){ return predecessor; }
+    Comm_Node* succ( ){ return successor; }
+
+private:
+
+    int my_rank{ 0 };
+    Comm_Node* predecessor{ nullptr };
+    Comm_Node* successor{ nullptr };
+};
+
+class Comm_Graph{
+
+public:
+
+    Comm_Graph( ){ }
+    Comm_Graph( int comm_sz ){
+
+        for( std::vector<int>::size_type i = 0; i < comm_sz; ++i ){
+
+            nodes.push_back( &Comm_Node( i, nullptr, nullptr ) );
+        }
+    }
+    ~Comm_Graph( ){ nodes.clear( ); }
+
+    void build_graph( ){
+        
+        for( std::vector<Comm_Node*>::size_type i = 0; i < nodes.size( ); ++i ){
+
+            if( i == 0 ){
+
+                nodes[ i ] -> set_succ( nodes[ i + 1 ] );
+            }
+
+            else if( i == nodes.size( ) - 1 ){
+
+                nodes[ i ] -> set_pred( nodes[ i - 1 ] );
+            }
+
+            else{
+                
+                nodes[ i ] -> set_pred( nodes[ i - 1 ] );
+                nodes[ i ] -> set_succ( nodes[ i + 1 ] );
+            }
+        }
+    }
+
+    void update( ){
+
+        for( auto i = 0; i < nodes.size( ); ++i ){
+
+            if( nodes[ i ]-> rank( ) == 0 ){
+
+                nodes[ i ] -> set_succ( nodes[ i + 1 ] -> succ( ) );
+            }
+
+            else if( nodes[ i ]-> rank( ) == nodes.size( ) - 1 ){
+
+                nodes[ i ] -> set_pred( nodes[ i - 1 ] -> pred( ) );
+            }
+
+            else{
+
+                nodes[ i ] -> set_succ( nodes[ i + 1 ] -> succ( ) );
+                nodes[ i ] -> set_pred( nodes[ i - 1 ] -> pred( ) );
+            }
+        }
+    }
+
+private:
+
+    std::vector<Comm_Node*> nodes{ };
+};
 
 // Represent the processes as nodes in a graph that is a tree. At the start, on the tree, each node has an edge
 // from itself to the next node, except for the last node, which is linked to no other node. Assign to each process
@@ -103,15 +209,15 @@ int next_node( int connection, int comm_size, int iteration ){
 // ( i - 1, i + 1 ), i.e., let node i - 1 be linked to its successor's successor. Repeat the sending of the greatest
 // element. Repeat edge deletion and insertion until the LAST node becomes the successor of the FIRST node. Do one
 // more sum. QED
-void parallel_prefix_sum_enhanced( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
+std::vector<int> parallel_prefix_sum_enhanced( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
 
-     int local_n = elements.size( ) / comm_sz;
+    //int local_n = elements.size( ) / comm_sz;
 
-    std::vector<int> local_partial( local_n );
+    std::vector<int> local_partial{ };
 
-    MPI_Scatter( elements.data( ), local_n, MPI_INT, local_partial.data( ), local_n, MPI_INT, 0, comm );
+    // MPI_Scatter( elements.data( ), local_n, MPI_INT, local_partial.data( ), local_n, MPI_INT, 0, comm );
 
-    local_partial = serial_prefix_sum( local_partial );
+    local_partial = serial_prefix_sum( elements );
 
     for( std::vector<int>::size_type i = 1; i < comm_sz; ++i ){
 
@@ -119,30 +225,33 @@ void parallel_prefix_sum_enhanced( int my_rank, int comm_sz, std::vector<int>& e
 
         value = local_partial[ local_partial.size( ) - 1 ];
 
-        int connection = next_node( my_rank, comm_sz, i );
-
         if( my_rank == comm_sz - 1 ){
 
-            MPI_Recv( &value, 1, MPI_INT, next_node( connection - i, comm_sz, i ) - i, 0, comm, MPI_STATUS_IGNORE );
+            MPI_Recv( &value, 1, MPI_INT, previous_node( my_rank, comm_sz, i ), 0, comm, MPI_STATUS_IGNORE );
             add_scalar( value, local_partial );
         }
 
         else if( my_rank == 0 ){
 
-            MPI_Send( &value, 1, MPI_INT, next_node( connection, comm_sz, i ), 0, comm );
+            MPI_Send( &value, 1, MPI_INT, next_node( my_rank, comm_sz, i ), 0, comm );
         }
 
         else if( my_rank - i >= 0 ){
 
-            MPI_Recv( &value, 1, MPI_INT, next_node( connection - i, comm_sz, i ) - i, 0, comm, MPI_STATUS_IGNORE );
+            MPI_Send( &value, 1, MPI_INT, next_node( my_rank, comm_sz, i ), 0, comm );
+            MPI_Recv( &value, 1, MPI_INT, previous_node( my_rank, comm_sz, i ), 0, comm, MPI_STATUS_IGNORE );
 
             add_scalar( value, local_partial );
 
             value = local_partial[ local_partial.size( ) - 1 ];
-
-            MPI_Send( &value, 1, MPI_INT, connection, 0, comm );
         }        
     }
+
+    std::vector<int> result( elements.size( ) * comm_sz );
+
+    MPI_Gather( local_partial.data( ), local_partial.size( ), MPI_INT, result.data( ), local_partial.size( ), MPI_INT, 0, comm );
+
+    return result;
 }
 
 // c. Suppose n = 2k for some positive integer k. Can you devise a serial algorithm and a parallelization of the serial algorithm
@@ -181,6 +290,25 @@ int main( ){
     std::vector<int> receive_elements( send_elements.size( ) / comm_sz );
 
     share_data( my_rank, send_elements, receive_elements, MPI_COMM_WORLD );
+
+    std::vector<int> result = parallel_prefix_sum_enhanced( my_rank, comm_sz, receive_elements, MPI_COMM_WORLD );
+
+    if( my_rank == 0 ){
+
+        for( auto i = 0; i < send_elements.size( ); ++i ){
+
+            std::cout << send_elements[ i ] << " ";
+        }
+
+        std::cout << "\n";
+
+        for( auto i = 0; i < result.size( ); ++i ){
+
+            std::cout << result[ i ] << " ";
+        }
+
+        std::cout << "\n";
+    }
 
     MPI_Finalize( );
 }
