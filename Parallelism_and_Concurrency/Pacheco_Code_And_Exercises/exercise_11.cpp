@@ -120,6 +120,7 @@ class Comm_Node{
 
 public:
 
+    Comm_Node( ){ }
     Comm_Node( int val, Comm_Node* pred, Comm_Node* succ ) : my_rank( val ), predecessor( pred ), successor( succ ){ }
     ~Comm_Node( ){ }
 
@@ -145,9 +146,13 @@ public:
     Comm_Graph( ){ }
     Comm_Graph( int comm_sz ){
 
+        nodes.resize( comm_sz );
+
         for( std::vector<int>::size_type i = 0; i < comm_sz; ++i ){
 
-            nodes.push_back( &Comm_Node( i, nullptr, nullptr ) );
+            nodes[ i ].set_rank( i );
+            nodes[ i ].set_pred( nullptr );
+            nodes[ i ].set_succ( nullptr );
         }
     }
     ~Comm_Graph( ){ nodes.clear( ); }
@@ -158,47 +163,60 @@ public:
 
             if( i == 0 ){
 
-                nodes[ i ] -> set_succ( nodes[ i + 1 ] );
+                nodes[ i ].set_succ( &nodes[ i + 1 ] );
             }
 
             else if( i == nodes.size( ) - 1 ){
 
-                nodes[ i ] -> set_pred( nodes[ i - 1 ] );
+                nodes[ i ].set_pred( &nodes[ i - 1 ] );
             }
 
             else{
                 
-                nodes[ i ] -> set_pred( nodes[ i - 1 ] );
-                nodes[ i ] -> set_succ( nodes[ i + 1 ] );
+                nodes[ i ].set_pred( &nodes[ i - 1 ] );
+                nodes[ i ].set_succ( &nodes[ i + 1 ] );
             }
         }
     }
 
+    // PROBLEM HERE -> SOMEHOW I NEED TO PRESERVE ITERATORS IN BETWEEN ITERATIONS IN THE FOR LOOP
     void update( ){
 
-        for( auto i = 0; i < nodes.size( ); ++i ){
+        for( auto i = 0; i < this -> size( ); ++i ){
 
-            if( nodes[ i ]-> rank( ) == 0 ){
+            if( nodes[ i ].pred( ) != nullptr && nodes[ i ].succ( ) != nullptr ){
 
-                nodes[ i ] -> set_succ( nodes[ i + 1 ] -> succ( ) );
+                nodes[ i ].set_pred( nodes[ i ].pred( ) -> pred( ) );
+                nodes[ i ].set_succ( nodes[ i ].succ( ) -> succ( ) );
             }
 
-            else if( nodes[ i ]-> rank( ) == nodes.size( ) - 1 ){
+            else if( nodes[ i ].pred( ) != nullptr ){
 
-                nodes[ i ] -> set_pred( nodes[ i - 1 ] -> pred( ) );
+                nodes[ i ].set_pred( nodes[ i ].pred( ) -> pred( ) );
+            }
+
+            else if( nodes[ i ].succ( ) != nullptr ){
+
+                nodes[ i ].set_succ( nodes[ i ].succ( ) -> succ( ) );
             }
 
             else{
 
-                nodes[ i ] -> set_succ( nodes[ i + 1 ] -> succ( ) );
-                nodes[ i ] -> set_pred( nodes[ i - 1 ] -> pred( ) );
+                continue;
             }
         }
     }
 
+    Comm_Node& operator[ ]( std::vector<int>::size_type index ){
+
+        return nodes[ index ];
+    }
+
+    int size( ){ return nodes.size( ); }
+
 private:
 
-    std::vector<Comm_Node*> nodes{ };
+    std::vector<Comm_Node> nodes{ };
 };
 
 // Represent the processes as nodes in a graph that is a tree. At the start, on the tree, each node has an edge
@@ -209,6 +227,63 @@ private:
 // ( i - 1, i + 1 ), i.e., let node i - 1 be linked to its successor's successor. Repeat the sending of the greatest
 // element. Repeat edge deletion and insertion until the LAST node becomes the successor of the FIRST node. Do one
 // more sum. QED
+std::vector<int> parallel_prefix_sum_graph( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
+
+    Comm_Graph graph( comm_sz );
+    graph.build_graph( );
+
+    std::vector<int> local_partial = serial_prefix_sum( elements );
+
+    for( auto i = 0; i < graph.size( ); ++i ){
+
+        if( graph[ i ].rank( ) == my_rank ){
+
+            while( graph[ i ].pred( ) != nullptr || graph[ i ].succ( ) != nullptr ){
+
+                int val = local_partial[ local_partial.size( ) - 1 ];
+
+                if( graph[ i ].pred( ) != nullptr && graph[ i ].succ( ) != nullptr ){
+
+                    MPI_Send( &val, 1, MPI_INT, graph[ i ].succ( ) -> rank( ), 0, comm );
+                    MPI_Recv( &val, 1, MPI_INT, graph[ i ].pred( ) -> rank( ), 0, comm, MPI_STATUS_IGNORE );
+
+                    add_scalar( val, local_partial );
+                }
+
+                else if( graph[ i ].pred( ) != nullptr ){
+
+                    MPI_Recv( &val, 1, MPI_INT, graph[ i ].pred( ) -> rank( ), 0, comm, MPI_STATUS_IGNORE );
+
+                    add_scalar( val, local_partial );
+                }
+
+                else if( graph[ i ].succ( ) != nullptr ){
+
+                    MPI_Send( &val, 1, MPI_INT, graph[ i ].succ( ) -> rank( ), 0, comm );
+                }
+
+                else{
+
+                    continue;
+                }
+
+                graph.update( );
+            }
+        }
+
+        else{
+            
+            continue;
+        }
+    }
+
+    std::vector<int> result( elements.size( ) * comm_sz );
+
+    MPI_Gather( local_partial.data( ), local_partial.size( ), MPI_INT, result.data( ), local_partial.size( ), MPI_INT, 0, comm );
+
+    return result;
+}
+
 std::vector<int> parallel_prefix_sum_enhanced( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
 
     //int local_n = elements.size( ) / comm_sz;
@@ -291,7 +366,7 @@ int main( ){
 
     share_data( my_rank, send_elements, receive_elements, MPI_COMM_WORLD );
 
-    std::vector<int> result = parallel_prefix_sum_enhanced( my_rank, comm_sz, receive_elements, MPI_COMM_WORLD );
+    std::vector<int> result = parallel_prefix_sum_graph( my_rank, comm_sz, receive_elements, MPI_COMM_WORLD );
 
     if( my_rank == 0 ){
 
