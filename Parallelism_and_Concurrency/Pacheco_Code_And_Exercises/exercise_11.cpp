@@ -306,27 +306,19 @@ std::vector<int> build_vector( int size ){
     return elements;
 }
 
+    /// ANSWER: MPI_Scan works the following way when each process holds a vector of n > 1: each process sends its vector to the next
+    ///         process. After the next process receives this vector, it applies MPI_Op( process_vector, previous_process_vector ), and
+    ///         then sends the resulting vector to the next process. Because of this behavior, I first let each process apply a serial
+    ///         prefix sum over its own vector, and then I call MPI_Scan. Because of how MPI_Scan behaves, only the LAST ELEMENTS in each
+    ///         process' vector represents a correct prefix sum value. All other elements represent incorrect sums.
+
 void mpi_scan_prefix_sum( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
 
     std::vector<int> random_numbers = build_vector( elements.size( ) );
 
-    int holder{ 0 };
+    random_numbers = serial_prefix_sum( random_numbers );
 
-    if( my_rank == 0 ){
-
-        random_numbers = serial_prefix_sum( random_numbers );
-
-        MPI_Scan( &random_numbers[ random_numbers.size( ) - 1 ], &holder, 1, MPI_INT, MPI_SUM, comm );
-    }
-
-    else{
-
-        
-    }
-}
-
-int cmpfunc (const void * a, const void * b) {
-   return ( *(int*)a - *(int*)b );
+    MPI_Scan( random_numbers.data( ), elements.data( ), random_numbers.size( ), MPI_INT, MPI_SUM, comm );
 }
 
 int main( ){
@@ -353,9 +345,9 @@ int main( ){
 
     mpi_scan_prefix_sum( my_rank, comm_sz, local_vec, MPI_COMM_WORLD );
 
-    std::vector<int> result( vec_size * comm_sz );
+    std::vector<int> result( vec_size );
 
-    MPI_Gather( local_vec.data( ), local_vec.size( ), MPI_INT, result.data( ), local_vec.size( ), MPI_INT, 0, MPI_COMM_WORLD );
+    MPI_Gather( &local_vec[ local_vec.size( ) - 1 ], 1, MPI_INT, result.data( ), 1, MPI_INT, 0, MPI_COMM_WORLD );
 
     if( my_rank == 0 ){
 
