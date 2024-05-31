@@ -8,6 +8,8 @@
 
 // a. Devise a serial algorithm for computing the n prefix sums of an array with n elements.
 
+    /// ANSWER:
+
 std::vector<int> serial_prefix_sum( std::vector<int>& elements ){
 
     int partial{ 0 };
@@ -59,12 +61,6 @@ void share_data( int my_rank, std::vector<int> send ,std::vector<int>& receive, 
     }
 }
 
-// I will perform a broadcast of the whole vector. But each process will only perform their respective partial sums
-void parallel_prefix_sum( int my_rank, std::vector<int>& elements ){
-
-    
-}
-
 void add_scalar( int scalar, std::vector<int>& elements ){
 
     for( std::vector<int>::size_type i = 0; i < elements.size( ); ++i ){
@@ -72,49 +68,6 @@ void add_scalar( int scalar, std::vector<int>& elements ){
         elements[ i ] += scalar;
     }
  }
-
-int previous_node( int connection, int comm_size, int iteration ){
-
-    if( connection == 0 ){
-
-        return connection;
-    }
-
-    else if( iteration == 0 ){
-
-        return connection - 1;
-    }
-
-    else{
-
-        connection = previous_node( connection - 1, comm_size, iteration - 1 );
-
-        return connection;
-    }
-}
-
-int next_node( int connection, int comm_size, int iteration ){
-
-    if( connection == comm_size - 1 ){
-
-        return connection;
-    }
-
-    else if( iteration == 0 ){
-
-        return connection + 1;
-    }
-
-    else{
-
-        connection = next_node( connection + 1, comm_size, iteration - 1 );
-
-        //return next_node( connection, comm_size, iteration - 1 );
-
-        return connection;
-    }
-}
-
 
 class Comm_Node{
 
@@ -179,25 +132,27 @@ public:
         }
     }
 
-    // PROBLEM HERE -> SOMEHOW I NEED TO PRESERVE ITERATORS IN BETWEEN ITERATIONS IN THE FOR LOOP
     void update( ){
 
+        // forwards updating
         for( auto i = 0; i < this -> size( ); ++i ){
 
-            if( nodes[ i ].pred( ) != nullptr && nodes[ i ].succ( ) != nullptr ){
+            if( nodes[ i ].succ( ) != nullptr ){
 
-                nodes[ i ].set_pred( nodes[ i ].pred( ) -> pred( ) );
                 nodes[ i ].set_succ( nodes[ i ].succ( ) -> succ( ) );
             }
 
-            else if( nodes[ i ].pred( ) != nullptr ){
+            else{
+
+                continue;
+            }
+        }
+        // backwards updating
+        for( auto i = this -> size( ) - 1; i > 0; --i ){
+
+            if( nodes[ i ].pred( ) != nullptr ){
 
                 nodes[ i ].set_pred( nodes[ i ].pred( ) -> pred( ) );
-            }
-
-            else if( nodes[ i ].succ( ) != nullptr ){
-
-                nodes[ i ].set_succ( nodes[ i ].succ( ) -> succ( ) );
             }
 
             else{
@@ -219,14 +174,14 @@ private:
     std::vector<Comm_Node> nodes{ };
 };
 
-// Represent the processes as nodes in a graph that is a tree. At the start, on the tree, each node has an edge
-// from itself to the next node, except for the last node, which is linked to no other node. Assign to each process
-// ( vector size / comm_sz ) elements, and let each node perform a serial prefix sum on their own elements. After
-// this sum, send the GREATEST element from each node to the node its linked to. Sum this new element to its own
-// elements. Now, for nodes i - 1, i, and i + 1, remove the edges ( i - 1, i ) and ( i, i + 1 ), and add the edge
-// ( i - 1, i + 1 ), i.e., let node i - 1 be linked to its successor's successor. Repeat the sending of the greatest
-// element. Repeat edge deletion and insertion until the LAST node becomes the successor of the FIRST node. Do one
-// more sum. QED
+    /// ANSWER: Represent the processes as nodes in a graph that is a tree. At the start, on the tree, each node has an edge
+                // from itself to the next node, except for the last node, which is linked to no other node. Assign to each process
+                // ( vector size / comm_sz ) elements, and let each node perform a serial prefix sum on their own elements. After
+                // this sum, send the GREATEST element from each node to the node its linked to. Sum this new element to its own
+                // elements. Now, for nodes i - 1, i, and i + 1, remove the edges ( i - 1, i ) and ( i, i + 1 ), and add the edge
+                // ( i - 1, i + 1 ), i.e., let node i - 1 be linked to its successor's successor. Repeat the sending of the greatest
+                // element. Repeat edge deletion and insertion until the LAST node becomes the successor of the FIRST node. Do one
+                // more sum. QED
 std::vector<int> parallel_prefix_sum_graph( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
 
     Comm_Graph graph( comm_sz );
@@ -284,78 +239,18 @@ std::vector<int> parallel_prefix_sum_graph( int my_rank, int comm_sz, std::vecto
     return result;
 }
 
-std::vector<int> parallel_prefix_sum_enhanced( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
-
-    //int local_n = elements.size( ) / comm_sz;
-
-    std::vector<int> local_partial{ };
-
-    // MPI_Scatter( elements.data( ), local_n, MPI_INT, local_partial.data( ), local_n, MPI_INT, 0, comm );
-
-    local_partial = serial_prefix_sum( elements );
-
-    for( std::vector<int>::size_type i = 1; i < comm_sz; ++i ){
-
-        int value{ 0 };
-
-        value = local_partial[ local_partial.size( ) - 1 ];
-
-        if( my_rank == comm_sz - 1 ){
-
-            MPI_Recv( &value, 1, MPI_INT, previous_node( my_rank, comm_sz, i ), 0, comm, MPI_STATUS_IGNORE );
-            add_scalar( value, local_partial );
-        }
-
-        else if( my_rank == 0 ){
-
-            MPI_Send( &value, 1, MPI_INT, next_node( my_rank, comm_sz, i ), 0, comm );
-        }
-
-        else if( my_rank - i >= 0 ){
-
-            MPI_Send( &value, 1, MPI_INT, next_node( my_rank, comm_sz, i ), 0, comm );
-            MPI_Recv( &value, 1, MPI_INT, previous_node( my_rank, comm_sz, i ), 0, comm, MPI_STATUS_IGNORE );
-
-            add_scalar( value, local_partial );
-
-            value = local_partial[ local_partial.size( ) - 1 ];
-        }        
-    }
-
-    std::vector<int> result( elements.size( ) * comm_sz );
-
-    MPI_Gather( local_partial.data( ), local_partial.size( ), MPI_INT, result.data( ), local_partial.size( ), MPI_INT, 0, comm );
-
-    return result;
-}
-
 // c. Suppose n = 2k for some positive integer k. Can you devise a serial algorithm and a parallelization of the serial algorithm
 // so that the parallel algorithm requires only k communication phases? (You might want to look for this online.)
 
-// d. MPI provides a collective communication function, MPI_Scan, that can be used to compute prefix sums:
+    /// ANSWER: see b)
 
-// int MPI_Scan ( void∗ sendbuf_p, void∗ recvbuf_p, int count, MPI_Datatype datatype, MPI_Op op, MPI_Comm comm ) ;
-
-// It operates on arrays with count elements; both sendbuf_p and recvbuf_p should refer to blocks of count elements of type datatype.
-// The op argument is the same as op for MPI_Reduce. Write an MPI program that generates a random array of count elements on each MPI
-// process, finds the prefix sums, and prints the results.
-
-int main( ){
-
-    int my_rank{ 0 }, comm_sz{ 0 };
-
-    MPI_Init( nullptr, nullptr );
-    MPI_Comm_rank( MPI_COMM_WORLD, &my_rank );
-    MPI_Comm_size( MPI_COMM_WORLD, &comm_sz );
-
-    //std::vector<int> elem{ 1, 2, 3, 4, 5 };
-    //std::vector<int> sums = serial_prefix_sum( elem );
+void questions_a_b_c( int my_rank, int comm_sz ){
 
     int vec_size{ 0 };
 
     if( my_rank == 0 ){ 
 
-        printf( "Enter the size of the vector: " );
+        printf( "Enter the size of the vector:\n" ); 
         scanf( "%d", &vec_size );
     }
 
@@ -372,17 +267,104 @@ int main( ){
 
         for( auto i = 0; i < send_elements.size( ); ++i ){
 
-            std::cout << send_elements[ i ] << " ";
+            printf( "%d ", send_elements[ i ] );
         }
 
-        std::cout << "\n";
+        printf( "\n" );
 
         for( auto i = 0; i < result.size( ); ++i ){
 
-            std::cout << result[ i ] << " ";
+            printf( "%d ", result[ i ] );
         }
 
-        std::cout << "\n";
+        printf( "\n" );
+    }
+}
+
+// d. MPI provides a collective communication function, MPI_Scan, that can be used to compute prefix sums:
+
+// int MPI_Scan( void∗ sendbuf_p, void∗ recvbuf_p, int count, MPI_Datatype datatype, MPI_Op op, MPI_Comm comm );
+
+// It operates on arrays with count elements; both sendbuf_p and recvbuf_p should refer to blocks of count elements of type datatype.
+// The op argument is the same as op for MPI_Reduce. Write an MPI program that generates a random array of count elements on each MPI
+// process, finds the prefix sums, and prints the results.
+
+std::vector<int> build_vector( int size ){
+
+    std::vector<int> elements( size );
+
+    std::random_device rand;
+    std::uniform_int_distribution dist( 0, size );
+    std::mt19937_64 rng( rand( ) );
+
+    for( std::vector<int>::size_type i = 0; i < elements.size( ); ++i ){
+
+        elements[ i ] = dist( rng );
+    }
+    
+
+    return elements;
+}
+
+void mpi_scan_prefix_sum( int my_rank, int comm_sz, std::vector<int>& elements, MPI_Comm comm ){
+
+    std::vector<int> random_numbers = build_vector( elements.size( ) );
+
+    int holder{ 0 };
+
+    if( my_rank == 0 ){
+
+        random_numbers = serial_prefix_sum( random_numbers );
+
+        MPI_Scan( &random_numbers[ random_numbers.size( ) - 1 ], &holder, 1, MPI_INT, MPI_SUM, comm );
+    }
+
+    else{
+
+        
+    }
+}
+
+int cmpfunc (const void * a, const void * b) {
+   return ( *(int*)a - *(int*)b );
+}
+
+int main( ){
+
+    int my_rank{ 0 }, comm_sz{ 0 };
+
+    MPI_Init( nullptr, nullptr );
+    MPI_Comm_rank( MPI_COMM_WORLD, &my_rank );
+    MPI_Comm_size( MPI_COMM_WORLD, &comm_sz );
+
+    //questions_a_b_c( my_rank, comm_sz );
+
+    int vec_size{ 0 };
+
+    if( my_rank == 0 ){
+
+        printf( "Enter vector size: \n" );
+        scanf( "%d", &vec_size );
+    }
+
+    MPI_Bcast( &vec_size, 1, MPI_INT, 0, MPI_COMM_WORLD );
+
+    std::vector<int> local_vec( vec_size );
+
+    mpi_scan_prefix_sum( my_rank, comm_sz, local_vec, MPI_COMM_WORLD );
+
+    std::vector<int> result( vec_size * comm_sz );
+
+    MPI_Gather( local_vec.data( ), local_vec.size( ), MPI_INT, result.data( ), local_vec.size( ), MPI_INT, 0, MPI_COMM_WORLD );
+
+    if( my_rank == 0 ){
+
+        for( auto i = 0; i < result.size( ); ++i ){
+
+            printf( "%d ", result[ i ] );
+        }
+
+        printf( "\n" );
     }
 
     MPI_Finalize( );
