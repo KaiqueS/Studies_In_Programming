@@ -77,6 +77,39 @@ std::vector<int> prefix_sum( int my_rank, int comm_size, int my_val, MPI_Comm co
     return prefixes;
 }
 
+// For this to work, elements.size = k * comm_size, i.e., elements.size must be divisible by comm_size
+std::vector<int> generalized_prefix_sum( std::vector<int>& elements, int my_rank, int comm_size, MPI_Comm comm ){
+
+    int sum{ elements[ my_rank ] }, temp_val{ elements[ my_rank ] };
+
+    int dest = ( my_rank + 1 ) % comm_size;
+    int source = ( my_rank + comm_size - 1 ) % comm_size;
+
+    std::vector<int> prefixes{ };
+    prefixes.push_back( elements[ my_rank ] );
+
+    for( auto i = 1; i < elements.size( ); ++i ){
+
+        MPI_Sendrecv_replace( &temp_val, 1, MPI_INT, source, 0, dest, 0, comm, MPI_STATUS_IGNORE );
+
+        sum += temp_val;
+
+        prefixes.push_back( sum );
+
+        if( i % ( comm_size - 1 ) == 0 ){
+
+            temp_val = elements[ i + my_rank ];
+        }
+
+        else{
+
+            continue;
+        }
+    }
+
+    return prefixes;
+}
+
 int main( ){
 
     int my_rank{ 0 }, comm_size{ 0 };
@@ -85,7 +118,10 @@ int main( ){
     MPI_Comm_rank( MPI_COMM_WORLD, &my_rank );
     MPI_Comm_size( MPI_COMM_WORLD, &comm_size );
 
-    std::vector<int> partial_sum = prefix_sum( my_rank, comm_size, my_rank, MPI_COMM_WORLD );
+    std::vector<int> test{ 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120 };
+
+    //std::vector<int> partial_sum = prefix_sum( my_rank, comm_size, my_rank, MPI_COMM_WORLD );
+    std::vector<int> partial_sum = generalized_prefix_sum( test, my_rank, comm_size, MPI_COMM_WORLD );
 
     if( my_rank == 0 ){
 
