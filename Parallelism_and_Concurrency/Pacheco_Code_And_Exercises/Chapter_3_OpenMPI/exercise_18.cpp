@@ -17,7 +17,10 @@
 // calls on the other processes should just use the count argument to the communication function, since they’re receiving/sending
 // elements that they will store in contiguous array locations
 
-/// ANSWER:
+/// ANSWER: To be fair, I do not think that the below answer is correct. I think that the intent behind the question is to be
+///         able to let each process get their OWN, EXCLUSIVE, block created by MPI_Type_vector, instead of sending the all
+///         blocks to all processes. After that, process 0 would collect each process' block into a single vector, and then
+///         print it. But I could not figure out how to do that.
 
 // NOTES: what if stride < block_length? Does this mess up with the blocks?
 //        Also, how to map blocks into process, so that each process gets one
@@ -46,7 +49,7 @@ void Read_vector( std::vector<double>& block, int rank, int comm_size, int vec_s
         std::vector<double> elements{ };
         elements = build_vector( vec_size );
 
-        block.resize( block_length );
+        block.resize( block_length * num_of_blocks );
 
         // PROBLEM HERE
         for( auto i = 0; i < comm_size; ++i ){
@@ -59,9 +62,9 @@ void Read_vector( std::vector<double>& block, int rank, int comm_size, int vec_s
 
     else{
 
-        block.resize( block_length );
+        block.resize( block_length * num_of_blocks );
 
-        MPI_Recv( block.data( ), block_length, MPI_DOUBLE, 0, 0, comm, MPI_STATUS_IGNORE );
+        MPI_Recv( block.data( ), block.size( ), MPI_DOUBLE, 0, 0, comm, MPI_STATUS_IGNORE );
     }
 
     // MPI_Bcast( vect_mpi_t, 1, vect_mpi_t, 0, comm ); - THIS WON'T WORK: since processes != 0 did not call type_commit nor type_vector,
@@ -73,11 +76,15 @@ void Print_vector( std::vector<double>& block, int rank, int comm_size, int vec_
 
     if( rank == 0 ){
 
-        std::vector<double> output( block_length * comm_size );
+        std::vector<double> output( block.size( ) );
+
+        MPI_Datatype newtype;
+        MPI_Type_vector( 1, output.size( ), 1, MPI_DOUBLE, &newtype );
+        MPI_Type_commit( &newtype );
 
         for( auto i = 1; i < comm_size; ++i ){
 
-            MPI_Recv( output.data( ), 1, vect_mpi_t, i, 0, comm, MPI_STATUS_IGNORE );      
+            MPI_Recv( output.data( ), 1, newtype, i, 0, comm, MPI_STATUS_IGNORE );      
         }
 
         for( auto i = 0; i < output.size( ); ++i ){
@@ -86,6 +93,8 @@ void Print_vector( std::vector<double>& block, int rank, int comm_size, int vec_
         }
 
         printf( "\n" );
+
+        MPI_Type_free( &newtype );
     }
 
     else{
