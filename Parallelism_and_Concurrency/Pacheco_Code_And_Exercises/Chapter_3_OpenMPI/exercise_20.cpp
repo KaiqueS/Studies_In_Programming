@@ -22,32 +22,32 @@
 
 void Get_Input( int rank, int comm_size, double a_p, double b_p, int n_p, MPI_Comm comm ){
 
-    int dest{ };
-
-    
-
-    MPI_Datatype type;
-    MPI_Pack(  )
+    char buffer[ 100 ];
 
     if( rank == 0 ){
+
+        int position{ 0 };
 
         printf( "Enter a, b, and n\n" );
 
         scanf( "%lf %lf %d", &a_p, &b_p, &n_p );
 
-        for( dest = 1; dest < comm_size; ++dest ){
+        MPI_Pack( &a_p, 1, MPI_DOUBLE, buffer, 100, &position, comm );
+        MPI_Pack( &b_p, 1, MPI_DOUBLE, buffer, 100, &position, comm );
+        MPI_Pack( &n_p, 1, MPI_INT, buffer, 100, &position, comm );
 
-            MPI_Send( a_p, 1, MPI_DOUBLE, dest, 0, MPI_COMM_WORLD );
-            MPI_Send( b_p, 1, MPI_DOUBLE, dest, 0, MPI_COMM_WORLD );
-            MPI_Send( n_p, 1, MPI_INT, dest, 0, MPI_COMM_WORLD );
-        }
+        MPI_Bcast( buffer, 100, MPI_PACKED, 0, comm );
     }
 
     else{
 
-        MPI_Recv( a_p, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
-        MPI_Recv( b_p, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
-        MPI_Recv( n_p, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
+        MPI_Bcast( buffer, 100, MPI_PACKED, 0, comm );
+
+        int position{ 0 };
+
+        MPI_Unpack( buffer, 100, &position, &a_p, 1, MPI_DOUBLE, comm );
+        MPI_Unpack( buffer, 100, &position, &b_p, 1, MPI_DOUBLE, comm );
+        MPI_Unpack( buffer, 100, &position, &n_p, 1, MPI_INT, comm );
     }
 }
 
@@ -59,7 +59,10 @@ int main( ){
     MPI_Comm_rank( MPI_COMM_WORLD, &rank );
     MPI_Comm_size( MPI_COMM_WORLD, &comm_size );
 
+    double a_p{ 0 }, b_p{ 0 };
+    int n_p{ 0 };
 
+    Get_Input( rank, comm_size, a_p, b_p, n_p, MPI_COMM_WORLD );
 
     MPI_Finalize( );
 }
