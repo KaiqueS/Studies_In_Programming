@@ -38,11 +38,11 @@ void fill_vector( std::vector<double>& vetor, int elements ){
 
 void* Pth_math_vect( void* rank ){
 
-    long* my_rank = static_cast<long*>( rank );
+    long my_rank = *static_cast<long*>( rank );
 
     int local_m = m / thread_count;
-    int my_first_row = *my_rank * local_m;
-    int my_last_row = ( *my_rank + 1 ) * local_m - 1;
+    int my_first_row = my_rank * local_m;
+    int my_last_row = ( my_rank + 1 ) * local_m - 1;
 
     for( auto i = my_first_row; i <= my_last_row; ++i ){
 
@@ -57,10 +57,14 @@ void* Pth_math_vect( void* rank ){
     return nullptr;
 }
 
-int main( ){
+int main( int argc, char* argv[ ] ){
+
+    thread_count = strtol( argv[ 1 ], nullptr, 10 );
+
+    pthread_t* thread_handles = new pthread_t( thread_count );
 
     printf( "Enter m and n: \n" );
-    scanf( "%d %d", m, n );
+    scanf( "%d %d", &m, &n );
 
     A.resize( m );
     x.resize( n );
@@ -74,6 +78,20 @@ int main( ){
     fill_matrix( A, m, n );
     fill_vector( x, n );
 
-    
+    for( long thread = 0; thread < thread_count; ++thread ){
 
+        pthread_create( &thread_handles[ thread ], nullptr, Pth_math_vect, static_cast<void*>( &thread ) );
+    }
+
+    for( long thread = 0; thread < thread_count; ++thread ){
+
+        pthread_join( thread_handles[ thread ], nullptr );
+    }
+
+    for( auto i = 0; i < y.size( ); ++i ){
+
+        std::cout << y[ i ] << " ";
+    }
+
+    delete thread_handles;
 }
