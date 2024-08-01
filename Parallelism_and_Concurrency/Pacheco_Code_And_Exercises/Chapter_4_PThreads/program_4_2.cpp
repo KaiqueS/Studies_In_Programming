@@ -38,19 +38,18 @@ void fill_vector( std::vector<double>& vetor, int elements ){
 
 void* Pth_math_vect( void* rank ){
 
-    long my_rank = *static_cast<long*>( rank );
+    long my_rank = ( long ) rank;
+    // long my_rank = *static_cadt<long*>( rank ); why is static_cast<void*>( rank ) wrong?
 
-    int local_m = m / thread_count;
+    int local_m = std::ceil( double( m / thread_count ) );
     int my_first_row = my_rank * local_m;
-    int my_last_row = ( my_rank + 1 ) * local_m - 1;
+    int my_last_row = ( ( my_rank + 1 ) * local_m ) - 1;
 
     for( auto i = my_first_row; i <= my_last_row; ++i ){
 
-        y[ i ] = 0.0;
-
         for( auto j = 0; j < n; ++j ){
 
-            y[ i ] = A[ i ][ j ] * x[ j ];
+            y[ i ] += A[ i ][ j ] * x[ j ];
         }
     }
 
@@ -66,21 +65,17 @@ int main( int argc, char* argv[ ] ){
     printf( "Enter m and n: \n" );
     scanf( "%d %d", &m, &n );
 
-    A.resize( m );
-    x.resize( n );
-    y.resize( n );
-
-    for( auto i = 0; i < A.size( ); ++i ){
-
-        A[ i ].resize( n );
-    }
+    A = std::vector<std::vector<double>>( m, std::vector<double>( n, 0 ) );
+    x = std::vector<double>( n, 0 );
+    y = std::vector<double>( n, 0 );
 
     fill_matrix( A, m, n );
     fill_vector( x, n );
 
     for( long thread = 0; thread < thread_count; ++thread ){
 
-        pthread_create( &thread_handles[ thread ], nullptr, Pth_math_vect, static_cast<void*>( &thread ) );
+        pthread_create( &thread_handles[ thread ], nullptr, Pth_math_vect, ( void* ) thread );
+        // pthread_create( &thread_handles[ thread ], nullptr, Pth_math_vect, static_cast<void*>( thread ) ); why is static_cast<void*>( thread ) wrong?
     }
 
     for( long thread = 0; thread < thread_count; ++thread ){
@@ -91,6 +86,11 @@ int main( int argc, char* argv[ ] ){
     for( auto i = 0; i < y.size( ); ++i ){
 
         std::cout << y[ i ] << " ";
+
+        if( i == y.size( ) - 1 ){
+
+            std::cout << "\n";
+        }
     }
 
     delete thread_handles;
