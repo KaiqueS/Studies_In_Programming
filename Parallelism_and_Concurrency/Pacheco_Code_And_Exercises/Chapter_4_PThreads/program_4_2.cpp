@@ -2,6 +2,8 @@
 #include <iostream>
 #include <vector>
 #include <random>
+#include <cstring>
+#include <cassert>
 
 int thread_count{ 0 };
 int m{ 0 }, n{ 0 };
@@ -38,8 +40,11 @@ void fill_vector( std::vector<double>& vetor, int elements ){
 
 void* Pth_math_vect( void* rank ){
 
-    long my_rank = ( long ) rank;
-    // long my_rank = *static_cadt<long*>( rank ); why is static_cast<void*>( rank ) wrong?
+    //long my_rank = ( long ) rank;
+    //long* my_rank = static_cast<long>( rank ); // why is static_cast<void*>( rank ) wrong?
+    long my_rank{ };
+    assert( sizeof my_rank == sizeof rank );
+    std::memcpy( &my_rank, &rank, sizeof my_rank );
 
     int local_m = std::ceil( double( m / thread_count ) );
     int my_first_row = my_rank * local_m;
@@ -75,7 +80,7 @@ int main( int argc, char* argv[ ] ){
     for( long thread = 0; thread < thread_count; ++thread ){
 
         pthread_create( &thread_handles[ thread ], nullptr, Pth_math_vect, ( void* ) thread );
-        // pthread_create( &thread_handles[ thread ], nullptr, Pth_math_vect, static_cast<void*>( thread ) ); why is static_cast<void*>( thread ) wrong?
+        // pthread_create( &thread_handles[ thread ], nullptr, Pth_math_vect, static_cast<void*>( &thread ) ); // why is static_cast<void*>( thread ) wrong?
     }
 
     for( long thread = 0; thread < thread_count; ++thread ){
