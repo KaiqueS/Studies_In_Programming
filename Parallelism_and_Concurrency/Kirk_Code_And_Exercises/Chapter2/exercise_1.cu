@@ -3,19 +3,55 @@
 #include <iostream>
 #include <random>
 
-void fill_matrix( float*& matrix, int size ){
+void fill_matrix( float**& matrix, int size ){
 
     std::random_device dev;
     std::uniform_real_distribution<float> dist( -( size * size ), ( size * size ) );
     std::mt19937_64 rng( dev( ) );
 
-    int dim = size * size;
+    //int dim = size * size;
 
-    matrix = new float( dim );
+    matrix = new float*[ size ];
 
-    for( auto i = 0; i < dim; ++i ){
+    for( auto i = 0; i < size; ++i ){
 
-        matrix[ i ] = dist( rng );
+        matrix[ i ] = new float( size );
+
+        for( auto j = 0; j < size; ++j ){
+
+            matrix[ i ][ j ] = dist( rng );
+        }
+    }
+}
+
+void print_matrix( float**& matrix, int size ){
+
+    for( auto i = 0; i < size; ++i ){
+
+        for( auto j = 0; j < size; ++j ){
+
+            printf( "%lf ", matrix[ i ][ j ] );
+
+            if( j == size - 1 ){
+
+                printf( "\n" );
+            }
+        }
+    }
+}
+
+void print_matrix( float*& matrix, int size ){
+
+    int double_dim = ( size * size );
+
+    for( auto i = 0; i < double_dim; ++i ){
+
+        printf( "%lf", matrix[ i ] );
+
+        if( double_dim % size == 0 ){
+
+            printf( "\n" );
+        }
     }
 }
 
@@ -33,11 +69,12 @@ void matrixAddKernel_B( float* output, float* first_input, float* second_input, 
 
     int matrix_range{ size * size };
 
-    int thread_id = ( blockIdx.x * blockDim.x ) + threadIdx.x;
+    int row = ( blockIdx.x * blockDim.x ) + threadIdx.x;
+    int col = ( blockIdx.y * blockDim.y ) + threadIdx.y;
 
-    if( thread_id < matrix_range ){
+    if( ( row < matrix_range ) && ( col < matrix_range ) ){
 
-        output[ thread_id ] = first_input[ thread_id ] + second_input[ thread_id ];
+        output[ ( row * size ) + col ] = first_input[ ( row * size ) + col ] + second_input[ ( row * size ) + col ];
     }
 }
 
@@ -87,6 +124,8 @@ void set_up( float* h_output, float* h_first_input, float* h_second_input, int d
 
     cudaMemcpy( h_output, d_Output, size, cudaMemcpyDeviceToHost );
 
+    print_matrix( h_output, dim );
+
     cudaFree( d_Output );
     cudaFree( d_first );
     cudaFree( d_second );
@@ -94,7 +133,7 @@ void set_up( float* h_output, float* h_first_input, float* h_second_input, int d
 
 int main( ){
 
-    float *output{ nullptr }, *first{ nullptr }, *second{ nullptr };
+    float **output{ nullptr }, **first{ nullptr }, **second{ nullptr };
 
     int dimension{ 0 };
 
@@ -104,10 +143,7 @@ int main( ){
     fill_matrix( first, dimension );
     fill_matrix( second, dimension );
 
-    for( auto i = 0; i < ( dimension * dimension ); ++i ){
-
-        printf( "%lf ", first[ i ] );
-    }
+    set_up( *output, *first, *second, dimension );
 
     std::cout << "\n";
 
