@@ -58,19 +58,6 @@ void print_matrix( float*& matrix, int size ){
     }
 }
 
-/// NOTE: Remember that C++ is NOT C. We cannot handle multidimensional arrays as we do in C, because in C++ there is NO
-///       guarantee that, for T** Obj, Obj[ 0 ][ 0 ] and Obj[ 1 ][ 0 ] are contiguous in memory. I.e., they are not stored
-///       sequentially in memory, even though Obj[ 0 ] and Obj[ 1 ] are. Thus, first we must flatten our arrays, since it
-///       is not trivial to handle multidimensional arrays in CUDA.
-
-/// 1. A matrix addition takes two input matrices A and B and produces one output matrix C. Each element of the output matrix C is the sum of the corresponding
-/// elements of the input matrices A and B, i.e., C[i][j] = A[i][j] + B[i][j]. For simplicity, we will only handle square matrices whose elements are
-/// single-precision floating-point numbers. Write a matrix addition kernel and the host stub function that can be called with four parameters: pointer-
-/// to-the-output matrix, pointer-to-the-first-input matrix, pointer-to-the-second-input matrix, and the number of elements in each dimension. Follow the
-/// instructions below:
-
-/// B. Write a kernel that has each thread to produce one output matrix element. Fill in the execution configuration parameters for this design.
-
 float*& simple_flattening( float**& matrix, int dimension ){
 
     float* flat_mat = new float[ dimension * dimension ];
@@ -86,7 +73,23 @@ float*& simple_flattening( float**& matrix, int dimension ){
     return flat_mat;
 }
 
+/// NOTE: Remember that C++ is NOT C. We cannot handle multidimensional arrays as we do in C, because in C++ there is NO
+///       guarantee that, for T** Obj, Obj[ 0 ][ 0 ] and Obj[ 1 ][ 0 ] are contiguous in memory. I.e., they are not stored
+///       sequentially in memory, even though Obj[ 0 ] and Obj[ 1 ] are. Thus, first we must flatten our arrays, since it
+///       is not trivial to handle multidimensional arrays in CUDA.
+
+/// 1. A matrix addition takes two input matrices A and B and produces one output matrix C. Each element of the output matrix C is the sum of the corresponding
+/// elements of the input matrices A and B, i.e., C[i][j] = A[i][j] + B[i][j]. For simplicity, we will only handle square matrices whose elements are
+/// single-precision floating-point numbers. Write a matrix addition kernel and the host stub function that can be called with four parameters: pointer-
+/// to-the-output matrix, pointer-to-the-first-input matrix, pointer-to-the-second-input matrix, and the number of elements in each dimension. Follow the
+/// instructions below:
+
+/// B. Write a kernel that has each thread to produce one output matrix element. Fill in the execution configuration parameters for this design.
+
 // Problem: how to generalize for instances where the dimensions of the matrix are greater than the available amount of threads?
+// Solution: let M be a square matrix of dimensions N x N, and B be a square block of dimensions A x A, s.t. A < N. Then, there
+//           are 0 < N² - A² elements uncovered by B. After B processes a A x A section of M, we just assign B to those N² - A²
+//           remaining elements.
 __global__ void matrixAddKernel_B( float* output, float* first_input, float* second_input, int size ){
 
     int row = ( blockIdx.x * blockDim.x ) + threadIdx.x;
@@ -100,18 +103,32 @@ __global__ void matrixAddKernel_B( float* output, float* first_input, float* sec
 
 // C. Write a kernel that has each thread to produce one output matrix row. Fill in the execution configuration parameters for the design.
 
-__global__
-void matrixAddKernel_C( float* output, float* first_input, float* second_input, int size ){
+__global__ void matrixAddKernel_C( float* output, float* first_input, float* second_input, int size ){
 
-    
+    int row = ( blockIdx.x * blockDim.x ) + threadIdx.x;
+
+    if( row < size ){
+
+        for( auto i = 0; i < size; ++i ){
+
+            output[ ( row * size ) + i ] = first_input[ ( row * size ) + i ] + second_input[ ( row * size ) + i ];
+        }
+    }
 }
 
 // D. Write a kernel that has each thread to produce one output matrix column. Fill in the execution configuration parameters for the design.
 
-__global__
-void matrixAddKernel_D( float* output, float* first_input, float* second_input, int size ){
+__global__ void matrixAddKernel_D( float* output, float* first_input, float* second_input, int size ){
 
-    
+    int col = ( blockIdx.y * blockDim.y ) + threadIdx.y;
+
+    if( col < size ){
+
+        for( auto i = 0; i < size; ++i ){
+
+            output[ ( col * size ) + i ] = first_input[ ( i * size ) + col ] + second_input[ ( i * size ) + col ];
+        }
+    }
 }
 
 // E. Analyze the pros and cons of each kernel design above.
@@ -123,7 +140,7 @@ void set_up( float*& h_output, float**& h_first_input, float**& h_second_input, 
 
     float *d_Output{ nullptr }, *d_first{ nullptr }, *d_second{ nullptr };
     
-    int size = ( dim * dim );
+    int size = ( dim * dim ) * sizeof( float ); // NOTE: DO NOT FORGET sizeof(), because allocation is made in terms of BYTES!
 
     cudaMalloc( ( void** ) &d_first, size );
     cudaMalloc( ( void** ) &d_second, size );
@@ -143,13 +160,13 @@ void set_up( float*& h_output, float**& h_first_input, float**& h_second_input, 
     dim3 dimGrid( blocks, 1, 1 );
     dim3 dimBlock( threads,threads, 1 );
 
-    matrixAddKernel_B<<<dimGrid, dimBlock>>>( d_Output, d_first, d_second, dim );
+    //matrixAddKernel_B<<<dimGrid, dimBlock>>>( d_Output, d_first, d_second, dim );
+    //matrixAddKernel_C<<<dimGrid, dimBlock>>>( d_Output, d_first, d_second, dim );
+    matrixAddKernel_D<<<dimGrid, dimBlock>>>( d_Output, d_first, d_second, dim );
 
     h_output = new float[ size ];
 
     cudaMemcpy( h_output, d_Output, size, cudaMemcpyDeviceToHost );
-
-    print_matrix( h_output, dim );
 
     cudaFree( d_Output );
     cudaFree( d_first );
@@ -169,9 +186,22 @@ int main( ){
     fill_matrix( first, dimension );
     fill_matrix( second, dimension );
 
+    printf( "\n" );
+
+    print_matrix( first, dimension );
+
+    printf( "\n" );
+
+    print_matrix( second, dimension );
+
+    printf( "\n" );
+
     set_up( output, first, second, dimension );
+
+    print_matrix( output, dimension );
 
     std::cout << "\n";
 
+    delete[ ] output;
     delete[ ] first, second;
 }
