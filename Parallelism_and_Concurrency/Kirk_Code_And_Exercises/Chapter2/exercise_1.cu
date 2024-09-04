@@ -60,7 +60,7 @@ void print_matrix( float*& matrix, int size ){
 
 /// NOTE: Remember that C++ is NOT C. We cannot handle multidimensional arrays as we do in C, because in C++ there is NO
 ///       guarantee that, for T** Obj, Obj[ 0 ][ 0 ] and Obj[ 1 ][ 0 ] are contiguous in memory. I.e., they are not stored
-///       sequentially in memory, even though Obj[ 0 ] and Obj[ 1 ~] are. Thus, first we must flatten our arrays, since it
+///       sequentially in memory, even though Obj[ 0 ] and Obj[ 1 ] are. Thus, first we must flatten our arrays, since it
 ///       is not trivial to handle multidimensional arrays in CUDA.
 
 /// 1. A matrix addition takes two input matrices A and B and produces one output matrix C. Each element of the output matrix C is the sum of the corresponding
@@ -89,12 +89,10 @@ float*& simple_flattening( float**& matrix, int dimension ){
 // Problem: how to generalize for instances where the dimensions of the matrix are greater than the available amount of threads?
 __global__ void matrixAddKernel_B( float* output, float* first_input, float* second_input, int size ){
 
-    int matrix_range{ size * size };
-
     int row = ( blockIdx.x * blockDim.x ) + threadIdx.x;
     int col = ( blockIdx.y * blockDim.y ) + threadIdx.y;
 
-    if( ( row < matrix_range ) && ( col < matrix_range ) ){
+    if( ( row < size ) && ( col < size ) ){
 
         output[ ( row * size ) + col ] = first_input[ ( row * size ) + col ] + second_input[ ( row * size ) + col ];
     }
@@ -125,7 +123,7 @@ void set_up( float*& h_output, float**& h_first_input, float**& h_second_input, 
 
     float *d_Output{ nullptr }, *d_first{ nullptr }, *d_second{ nullptr };
     
-    int size = ( dim * dim ) * sizeof( float );
+    int size = ( dim * dim );
 
     cudaMalloc( ( void** ) &d_first, size );
     cudaMalloc( ( void** ) &d_second, size );
@@ -143,7 +141,7 @@ void set_up( float*& h_output, float**& h_first_input, float**& h_second_input, 
     std::cin >> blocks >> threads;
 
     dim3 dimGrid( blocks, 1, 1 );
-    dim3 dimBlock( threads, 1, 1 );
+    dim3 dimBlock( threads,threads, 1 );
 
     matrixAddKernel_B<<<dimGrid, dimBlock>>>( d_Output, d_first, d_second, dim );
 
