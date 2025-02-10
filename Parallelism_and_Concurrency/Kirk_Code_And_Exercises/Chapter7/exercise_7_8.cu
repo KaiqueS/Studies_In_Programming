@@ -155,6 +155,8 @@ __global__ void convolution_3D( double* input_matrix, double* filter, double* ou
 
 	double Pvalue = 0.0f;
 
+	// double filter_element{ 0 }, matrix_element{ 0 }; DEBUG ONLY
+
 	for( auto fSlice = 0; fSlice < ( ( 2 * radius ) + 1 ); ++fSlice ){
 
 		for( auto fRow = 0; fRow < ( ( 2 * radius ) + 1 ); ++fRow ){
@@ -169,8 +171,54 @@ __global__ void convolution_3D( double* input_matrix, double* filter, double* ou
 					 inCol >= 0 && inCol < matrix_width &&
 					 inSlice >= 0 && inSlice < matrix_depth ){
 
+					// filter_element = filter[ ( fRow * ( ( 2 * radius ) + 1 ) ) + fCol ]; DEUBG ONLY
+					// matrix_element = input_matrix[ ( inSlice * matrix_depth * matrix_depth ) + ( inRow * matrix_width ) + inCol ]; DEBUG ONLY
+
 					// Here, since our filter is 2D, there is NO need to iterate over its slices, since we are using only one slice repeatedly.
 					Pvalue += filter[ ( fRow * ( ( 2 * radius ) + 1 ) ) + fCol ] * input_matrix[ ( inSlice * matrix_depth * matrix_depth ) + ( inRow * matrix_width ) + inCol ];
+				}
+			}
+		}
+	}
+
+	output_matrix[ ( outSlice * matrix_depth * matrix_depth ) + ( outRow * matrix_width ) + outCol ] = Pvalue;
+}
+
+// NOTE: both input and output matrices have the SAME dimensions
+// Approach: here, I implement the second approach described above, i.e., a 3D filter applied to a 3D matrix.
+__global__ void convolution_3D_filter( double* input_matrix, double* filter, double* output_matrix, int radius, int matrix_width, int matrix_height, int matrix_depth  ){
+	
+	// DESCRIPTION: take the radius R, and pick an element E from the input matrix M, where the indexes of E are x, y, z. Then, all elements within the 3D halo of E in M that share the
+	//							same x, y coordinates but differ on z will be multiplied by the same element from the filter. I.e., to get a better visualization, imagine that we are building a 3D ma-
+	//							trix with ( 2R + 1 ) slices, where all slices are equal to the filter.
+
+	int outCol = ( blockIdx.x * blockDim.x ) + threadIdx.x;
+	int outRow = ( blockIdx.y * blockDim.y ) + threadIdx.y;
+	int outSlice = ( blockIdx.z * blockDim.z ) + threadIdx.z;
+
+	double Pvalue = 0.0f;
+
+	// double filter_element{ 0 }, matrix_element{ 0 }; DEBUG ONLY
+
+	for( auto fSlice = 0; fSlice < ( ( 2 * radius ) + 1 ); ++fSlice ){
+
+		for( auto fRow = 0; fRow < ( ( 2 * radius ) + 1 ); ++fRow ){
+
+			for( auto fCol = 0; fCol < ( ( 2 * radius ) + 1 ); ++fCol ){
+
+				int inRow = outRow - radius + fRow;
+				int inCol = outCol - radius + fCol;
+				int inSlice = outSlice - radius + fSlice;
+
+				if( inRow >= 0 && inRow < matrix_height &&
+					 inCol >= 0 && inCol < matrix_width &&
+					 inSlice >= 0 && inSlice < matrix_depth ){
+
+					// filter_element = filter[ ( fRow * ( ( 2 * radius ) + 1 ) ) + fCol ]; DEUBG ONLY
+					// matrix_element = input_matrix[ ( inSlice * matrix_depth * matrix_depth ) + ( inRow * matrix_width ) + inCol ]; DEBUG ONLY
+
+					// Here, since our filter is 2D, there is NO need to iterate over its slices, since we are using only one slice repeatedly.
+					Pvalue += filter[ ( fSlice * ( ( 2 * radius ) + 1 ) * ( ( 2 * radius ) + 1 ) ) + ( fRow * ( ( 2 * radius ) + 1 ) ) + fCol ] * input_matrix[ ( inSlice * matrix_depth * matrix_depth ) + ( inRow * matrix_width ) + inCol ];
 				}
 			}
 		}
@@ -185,7 +233,8 @@ void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatr
 	double* dev_InMatrix{ nullptr }, *dev_filter{ nullptr }, *dev_OutMatrix{ nullptr };
 
 	long int matrix_dimensions = host_matrix_depth * host_matrix_width * host_matrix_height * sizeof( double );
-	long int filter_dimensions = ( ( 2 * radius ) + 1 ) * ( ( 2 * radius ) + 1 ) * sizeof( double );
+	//	long int filter_dimensions = ( ( 2 * radius ) + 1 ) * ( ( 2 * radius ) + 1 ) * sizeof( double );
+	long int filter_dimensions = ( ( 2 * radius ) + 1 ) * ( ( 2 * radius ) + 1 ) * ( ( 2 * radius ) + 1 ) * sizeof( double );
 
 	cudaMalloc( ( void** ) &dev_InMatrix, matrix_dimensions );
 	cudaMalloc( ( void** ) &dev_OutMatrix, matrix_dimensions );
@@ -203,7 +252,8 @@ void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatr
 	dim3 grid( num_blocks,1, 1 );
 	dim3 block( num_threads, num_threads, num_threads );
 
-	convolution_3D<<<grid, block>>>( dev_InMatrix, dev_filter, dev_OutMatrix, radius, host_matrix_height, host_matrix_width, host_matrix_depth );
+	//	convolution_3D<<<grid, block>>>( dev_InMatrix, dev_filter, dev_OutMatrix, radius, host_matrix_height, host_matrix_width, host_matrix_depth );
+	convolution_3D_filter<<<grid, block>>>( dev_InMatrix, dev_filter, dev_OutMatrix, radius, host_matrix_height, host_matrix_width, host_matrix_depth );
 
 	cudaMemcpy( host_OutMatrix, dev_OutMatrix, matrix_dimensions, cudaMemcpyDeviceToHost );
 
@@ -215,10 +265,12 @@ void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatr
 int main( ){
 
 	double*** matrix = generate_matrix( 5 );
-	double** filter = generate_filter( 3 );
+	//double** filter = generate_filter( 3 );
+	double*** filter = generate_matrix( 3 );
 
 	double* flat_matrix = flatten_matrix( matrix, 5 );
-	double* flat_filter = flatten_filter( filter, 3 );
+	//double* flat_filter = flatten_filter( filter, 3 );
+	double* flat_filter = flatten_matrix( filter, 3 );
 
 	double* output = new double[ 5 * 5 * 5 * sizeof( double ) ];
 
@@ -230,11 +282,13 @@ int main( ){
 
 	//std::cout << "\n";
 
-	print_filter( flat_filter, 3 );
+	print_matrix( flat_filter, 3 );
 
 	std::cout << "\n";
 
 	set_up( flat_matrix, flat_filter, output, 1, 5, 5, 5 );
+
+	std::cout << "\n";
 
 	print_matrix( output, 5 );
 
