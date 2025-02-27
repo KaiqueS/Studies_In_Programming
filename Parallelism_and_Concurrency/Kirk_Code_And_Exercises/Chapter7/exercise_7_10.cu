@@ -140,10 +140,56 @@ void print_filter( double* filter, int size ){
 /// ANSWER: 
 
 #define FILTER_RADIUS 1
-#define IN_TILE_DIM 32 // I could use extern here and maybe complicate things, but for now I am avoiding it
+#define IN_TILE_DIM 16 // I could use extern here instead of a macro, and maybe complicate things, but for now I am avoiding it
 #define OUT_TILE_DIM ( ( IN_TILE_DIM ) - ( 2 * ( FILTER_RADIUS ) ) )
 
 __constant__ double filter[ ( 2 * FILTER_RADIUS ) + 1 ][ ( 2 * FILTER_RADIUS ) + 1 ][ ( 2 * FILTER_RADIUS ) + 1 ];
+
+__global__ void constM_tiled_convolution_3d( double* input_matrix, double* output_matrix, int height, int width, int depth ){
+
+	int slice = ( blockIdx.z * OUT_TILE_DIM ) + threadIdx.z - FILTER_RADIUS;
+	int row = ( blockIdx.y * OUT_TILE_DIM ) + threadIdx.y - FILTER_RADIUS;
+	int col = ( blockIdx.x * OUT_TILE_DIM ) + threadIdx.x - FILTER_RADIUS;
+
+	__shared__ double shared_input[ IN_TILE_DIM ][ IN_TILE_DIM ][ IN_TILE_DIM ];
+
+	if( ( slice >= 0 && slice < depth ) && ( row >= 0 && row < height ) && ( col >= 0 && col < width ) ){
+
+		shared_input[ threadIdx.z ][ threadIdx.y ][ threadIdx.x ] = input_matrix[ ( slice * depth * depth ) + ( row * height ) + col ];
+	}
+
+	else{
+
+		shared_input[ threadIdx.z ][ threadIdx.y ][ threadIdx.x ] = 0.0;
+	}
+
+	__syncthreads( );
+
+	int tileSlice = threadIdx.z - FILTER_RADIUS;
+	int tileRow = threadIdx.y - FILTER_RADIUS;
+	int tileCol = threadIdx.x - FILTER_RADIUS;
+
+	if( ( slice >= 0 && slice < depth ) && ( row >= 0 && row < height ) && ( col >= 0 && col < width ) ){
+
+		if( ( tileSlice >= 0 && tileSlice < OUT_TILE_DIM ) && ( tileRow >= 0 && tileRow < OUT_TILE_DIM ) && ( tileCol >= 0 && tileCol < OUT_TILE_DIM ) ){
+
+			double Pvalue = 0.0;
+
+			for( int fSlice = 0; fSlice < ( ( 2 * FILTER_RADIUS ) + 1 ); ++fSlice ){
+
+				for( int fRow = 0; fRow < ( ( 2 * FILTER_RADIUS ) + 1 ); ++fRow ){
+
+					for( int fCol = 0; fCol < ( ( 2 * FILTER_RADIUS ) + 1 ); ++fCol ){
+
+						Pvalue += filter[ fSlice ][ fRow ][ fCol ] * shared_input[ tileSlice + fSlice ][ tileRow + fRow ][ tileCol + fCol ];
+					}
+				}
+			}
+
+			output_matrix[ ( slice * depth * depth ) + ( row * height ) + col ] = Pvalue;
+		}
+	}
+}
 
 // NOTE: both input and output matrices have the SAME dimensions
 void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatrix, int host_matrix_height, int host_matrix_width, int host_matrix_depth ){
@@ -169,13 +215,16 @@ void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatr
 	dim3 block( num_threads, num_threads, num_threads );
 
 	//	convolution_3D<<<grid, block>>>( dev_InMatrix, dev_filter, dev_OutMatrix, radius, host_matrix_height, host_matrix_width, host_matrix_depth );
-	convolution_3D<<<grid, block>>>( dev_InMatrix, dev_OutMatrix, host_matrix_height, host_matrix_width, host_matrix_depth );
+	constM_tiled_convolution_3d<<<grid, block>>>( dev_InMatrix, dev_OutMatrix, host_matrix_height, host_matrix_width, host_matrix_depth );
 
 	cudaMemcpy( host_OutMatrix, dev_OutMatrix, matrix_dimensions, cudaMemcpyDeviceToHost );
 
 	cudaFree( dev_InMatrix );
 	cudaFree( dev_OutMatrix );
+	cudaFree( filter );
 }
+
+/// PROBLEM: for the program to run correctly, the block size must be GREATER THAN the input matrix size
 
 int main( ){
 
