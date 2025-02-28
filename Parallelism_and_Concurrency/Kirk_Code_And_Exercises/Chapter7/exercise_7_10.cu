@@ -169,6 +169,8 @@ __global__ void constM_tiled_convolution_3d( double* input_matrix, double* outpu
 	int tileRow = threadIdx.y - FILTER_RADIUS;
 	int tileCol = threadIdx.x - FILTER_RADIUS;
 
+	double test{ 0 }, filter_test{ 0 };
+
 	if( ( slice >= 0 && slice < depth ) && ( row >= 0 && row < height ) && ( col >= 0 && col < width ) ){
 
 		if( ( tileSlice >= 0 && tileSlice < OUT_TILE_DIM ) && ( tileRow >= 0 && tileRow < OUT_TILE_DIM ) && ( tileCol >= 0 && tileCol < OUT_TILE_DIM ) ){
@@ -181,6 +183,10 @@ __global__ void constM_tiled_convolution_3d( double* input_matrix, double* outpu
 
 					for( int fCol = 0; fCol < ( ( 2 * FILTER_RADIUS ) + 1 ); ++fCol ){
 
+						test = shared_input[ tileSlice + fSlice ][ tileRow + fRow ][ tileCol + fCol ];
+						filter_test = filter[ fSlice ][ fRow ][ fCol ];
+
+						// The problem is here: threads on the block's boundaries are accessing invalid addresses from shared_input
 						Pvalue += filter[ fSlice ][ fRow ][ fCol ] * shared_input[ tileSlice + fSlice ][ tileRow + fRow ][ tileCol + fCol ];
 					}
 				}
@@ -228,15 +234,25 @@ void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatr
 
 int main( ){
 
-	double*** matrix = generate_matrix( 5 );
-	double*** filter = generate_matrix( 3 );
+	int matrix_dim{ 0 }, filter_dim{ 0 };
 
-	double* flat_matrix = flatten_matrix( matrix, 5 );
-	double* flat_filter = flatten_matrix( filter, 3 );
+	std::cout << "Enter the dimensions of the matrix: ";
+	std::cin >> matrix_dim;
 
-	double* output = new double[ 5 * 5 * 5 * sizeof( double ) ];
+	std::cout << "\nEnter the dimensions of the filter matrix: ";
+	std::cin >> filter_dim;
 
-	print_matrix( matrix, 5 );
+	std::cout << "\n";
+
+	double*** matrix = generate_matrix( matrix_dim );
+	double*** filter = generate_matrix( filter_dim );
+
+	double* flat_matrix = flatten_matrix( matrix, matrix_dim );
+	double* flat_filter = flatten_matrix( filter, filter_dim );
+
+	double* output = new double[ matrix_dim * matrix_dim * matrix_dim * sizeof( double ) ];
+
+	print_matrix( matrix, matrix_dim );
 
 	std::cout << "\n";
 
@@ -244,15 +260,15 @@ int main( ){
 
 	//std::cout << "\n";
 
-	print_matrix( flat_filter, 3 );
+	print_matrix( flat_filter, filter_dim );
 
 	std::cout << "\n";
 
-	set_up( flat_matrix, flat_filter, output, 5, 5, 5 );
+	set_up( flat_matrix, flat_filter, output, matrix_dim, matrix_dim, matrix_dim );
 
 	std::cout << "\n";
 
-	print_matrix( output, 5 );
+	print_matrix( output, matrix_dim );
 
 	delete[ ] matrix, filter, output;
 	delete[ ] flat_matrix, flat_filter;
