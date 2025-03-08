@@ -240,19 +240,22 @@ __global__ void constM_tiled_convolution_3d( double* input_matrix, double* outpu
 	__syncthreads( );
 
 	// PROBLEM: this should not be working when ( blockdim - radius ) < input/output_matrix size
-	if( output_slice >= 0 && output_slice < depth && output_row >= 0 && output_row < height && output_col >= 0 && output_col < width ){
+		// POTENTIAL ANSWER: since shared_input > input/output matrices dimensions, there is always a subset of threads within valid ranges
+		//                   Also, by removing num_threads += radius, things got fixed. I say fuck it.
+	/*if( output_slice >= 0 && output_slice < depth && output_row >= 0 && output_row < height && output_col >= 0 && output_col < width ){
 
 		//output_matrix[ ( output_slice * depth * depth ) + ( output_row * height ) + output_col ] = shared_input[ ( in_tile_slice * ( blockDim.z * blockDim.z ) ) + ( in_tile_row * ( blockDim.y - FILTER_RADIUS ) ) + ( blockDim.x - FILTER_RADIUS ) ];
 		output_matrix[ ( output_slice * depth * depth ) + ( output_row * height ) + output_col ] = shared_input[ ( threadIdx.z * ( blockDim.z * blockDim.z ) ) + ( threadIdx.y * blockDim.y ) + threadIdx.x ];
-	}
+	}*/
 	
+	// NOTE: I still have to explain myself this and why it is necessary to subtract radius from threadId
 	int intile_slice = threadIdx.z - radius;
 	int intile_row = threadIdx.y - radius;
 	int intile_col = threadIdx.x - radius;
 
 	if( output_slice >= 0 && output_slice < depth && output_row >= 0 && output_row < height && output_col >= 0 && output_col < width ){
 
-		if( true ){
+		if( intile_slice >= 0 && intile_slice < ( blockDim.z - radius ) && intile_row >= 0 && intile_row < ( blockDim.y - radius ) && intile_col >= 0 && intile_col < ( blockDim.x - radius ) ){
 
 			double Pvalue{ 0.0 };
 
@@ -262,12 +265,12 @@ __global__ void constM_tiled_convolution_3d( double* input_matrix, double* outpu
 
 					for( int fCol = 0; fCol < ( 2 * radius ) + 1; ++fCol ){
 
-						Pvalue += filter[ fSlice ][ fRow ][ fCol ] * shared_input[ ( 0 ) ];
+						Pvalue += filter[ fSlice ][ fRow ][ fCol ] * shared_input[ ( ( intile_slice + fSlice ) * ( blockDim.z * blockDim.z ) ) + ( ( intile_row + fRow ) * blockDim.y ) + ( intile_col + fCol ) ];
 					}
 				}
 			}
 
-			//output_matrix[ ( output_slice * depth * depth ) + ( output_row * height ) + output_col ] += Pvalue;
+			output_matrix[ ( output_slice * depth * depth ) + ( output_row * height ) + output_col ] += Pvalue;
 		}
 	}
 }
