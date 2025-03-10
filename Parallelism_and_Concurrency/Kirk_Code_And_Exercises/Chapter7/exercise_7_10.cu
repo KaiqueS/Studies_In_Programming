@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <random>
 #include <iostream>
+#include <cmath>
 
 double***& generate_matrix( int size ){
 
@@ -139,77 +140,10 @@ void print_filter( double* filter, int size ){
 /// ANSWER: 
 
 #define FILTER_RADIUS 1
-#define IN_TILE_DIM 16 // I could use extern here instead of a macro, and maybe complicate things, but for now I am avoiding it
-#define OUT_TILE_DIM ( ( IN_TILE_DIM ) - ( 2 * ( FILTER_RADIUS ) ) )
 
 __constant__ double filter[ ( 2 * FILTER_RADIUS ) + 1 ][ ( 2 * FILTER_RADIUS ) + 1 ][ ( 2 * FILTER_RADIUS ) + 1 ];
 
-/*__global__ void constM_tiled_convolution_3d( double* input_matrix, double* output_matrix, int height, int width, int depth, int shared_memsize ){
-
-	// Output matrix slice, row, and column
-	int slice = ( blockIdx.z * OUT_TILE_DIM ) + threadIdx.z - FILTER_RADIUS;
-	int row = ( blockIdx.y * OUT_TILE_DIM ) + threadIdx.y - FILTER_RADIUS;
-	int col = ( blockIdx.x * OUT_TILE_DIM ) + threadIdx.x - FILTER_RADIUS;
-
-	//__shared__ double shared_input[ IN_TILE_DIM ][ IN_TILE_DIM ][ IN_TILE_DIM ];
-	__shared__ extern double shared_input[];
-
-	if( ( slice >= 0 && slice < depth ) && ( row >= 0 && row < height ) && ( col >= 0 && col < width ) ){
-
-		//shared_input[ threadIdx.z ][ threadIdx.y ][ threadIdx.x ] = input_matrix[ ( slice * depth * depth ) + ( row * height ) + col ];
-		shared_input[ (  ) ] = input_matrix[ ( slice * depth * depth ) + ( row * height ) + col ];
-	}
-
-	else{
-
-		//shared_input[ threadIdx.z ][ threadIdx.y ][ threadIdx.x ] = 0.0;
-		shared_input[  ] = 0.0;
-	}
-
-	__syncthreads( );
-
-	int tileSlice = threadIdx.z - FILTER_RADIUS;
-	int tileRow = threadIdx.y - FILTER_RADIUS;
-	int tileCol = threadIdx.x - FILTER_RADIUS;
-
-	double test{ 0 }, filter_test{ 0 };
-
-	if( ( slice >= 0 && slice < depth ) && ( row >= 0 && row < height ) && ( col >= 0 && col < width ) ){
-
-		if( ( tileSlice >= 0 && tileSlice < OUT_TILE_DIM ) && ( tileRow >= 0 && tileRow < OUT_TILE_DIM ) && ( tileCol >= 0 && tileCol < OUT_TILE_DIM ) ){
-
-			double Pvalue = 0.0;
-
-			for( int fSlice = 0; fSlice < ( ( 2 * FILTER_RADIUS ) + 1 ); ++fSlice ){
-
-				for( int fRow = 0; fRow < ( ( 2 * FILTER_RADIUS ) + 1 ); ++fRow ){
-
-					for( int fCol = 0; fCol < ( ( 2 * FILTER_RADIUS ) + 1 ); ++fCol ){
-
-						test = shared_input[ tileSlice + fSlice ][ tileRow + fRow ][ tileCol + fCol ];
-						filter_test = filter[ fSlice ][ fRow ][ fCol ];
-
-						// The problem is here: threads on the block's boundaries are accessing invalid addresses from shared_input
-						Pvalue += filter[ fSlice ][ fRow ][ fCol ] * shared_input[ tileSlice + fSlice ][ tileRow + fRow ][ tileCol + fCol ];
-					}
-				}
-			}
-
-			output_matrix[ ( slice * depth * depth ) + ( row * height ) + col ] = Pvalue;
-		}
-	}
-	
-
-}*/
-
 __global__ void constM_tiled_convolution_3d( double* input_matrix, double* output_matrix, int height, int width, int depth, int radius ){
-
-	const int out_tile_dim = blockDim.z - ( 2 * radius );
-
-	// Blocks' dimensions matches input tile + radius BEFORE this function is called
-	int in_tile_slice = ( blockDim.z * blockIdx.z ) + threadIdx.z;
-	int in_tile_row = ( blockDim.y * blockIdx.y ) + threadIdx.y;
-	int in_tile_col = ( blockDim.x * blockIdx.x ) + threadIdx.x;
 
 	// Output matrix is in Global Memory, which means that, if we use multiple blocks, we must use blockDim and blockId to be able to assign threads from different
 	// blocks to their corresponding tiles on the output matrix.
@@ -242,13 +176,9 @@ __global__ void constM_tiled_convolution_3d( double* input_matrix, double* outpu
 	// PROBLEM: this should not be working when ( blockdim - radius ) < input/output_matrix size
 		// POTENTIAL ANSWER: since shared_input > input/output matrices dimensions, there is always a subset of threads within valid ranges
 		//                   Also, by removing num_threads += radius, things got fixed. I say fuck it.
-	/*if( output_slice >= 0 && output_slice < depth && output_row >= 0 && output_row < height && output_col >= 0 && output_col < width ){
-
-		//output_matrix[ ( output_slice * depth * depth ) + ( output_row * height ) + output_col ] = shared_input[ ( in_tile_slice * ( blockDim.z * blockDim.z ) ) + ( in_tile_row * ( blockDim.y - FILTER_RADIUS ) ) + ( blockDim.x - FILTER_RADIUS ) ];
-		output_matrix[ ( output_slice * depth * depth ) + ( output_row * height ) + output_col ] = shared_input[ ( threadIdx.z * ( blockDim.z * blockDim.z ) ) + ( threadIdx.y * blockDim.y ) + threadIdx.x ];
-	}*/
 	
 	// NOTE: I still have to explain myself this and why it is necessary to subtract radius from threadId
+	// ANSWER: to find the center of the cube, i.e., remove the halo from the input tile cube
 	int intile_slice = threadIdx.z - radius;
 	int intile_row = threadIdx.y - radius;
 	int intile_col = threadIdx.x - radius;
@@ -265,6 +195,7 @@ __global__ void constM_tiled_convolution_3d( double* input_matrix, double* outpu
 
 					for( int fCol = 0; fCol < ( 2 * radius ) + 1; ++fCol ){
 
+						// Adding fSlice/fRow/fCol is valid because ghost cells are defined to be = 0.0
 						Pvalue += filter[ fSlice ][ fRow ][ fCol ] * shared_input[ ( ( intile_slice + fSlice ) * ( blockDim.z * blockDim.z ) ) + ( ( intile_row + fRow ) * blockDim.y ) + ( intile_col + fCol ) ];
 					}
 				}
@@ -276,49 +207,9 @@ __global__ void constM_tiled_convolution_3d( double* input_matrix, double* outpu
 }
 
 // NOTE: both input and output matrices have the SAME dimensions
-/*void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatrix, int host_matrix_height, int host_matrix_width, int host_matrix_depth ){
-
-	double* dev_InMatrix{ nullptr }, *dev_OutMatrix{ nullptr };
-
-	long int matrix_dimensions = host_matrix_depth * host_matrix_width * host_matrix_height * sizeof( double );
-	long int filter_dimensions = ( ( 2 * FILTER_RADIUS ) + 1 ) * ( ( 2 * FILTER_RADIUS ) + 1 ) * ( ( 2 * FILTER_RADIUS ) + 1 ) * sizeof( double );
-
-	cudaMalloc( ( void** ) &dev_InMatrix, matrix_dimensions );
-	cudaMalloc( ( void** ) &dev_OutMatrix, matrix_dimensions );
-
-	cudaMemcpy( dev_InMatrix, host_InMatrix, matrix_dimensions, cudaMemcpyHostToDevice );
-	cudaMemcpy( dev_OutMatrix, host_OutMatrix, matrix_dimensions, cudaMemcpyHostToDevice );
-	cudaMemcpyToSymbol( filter, host_filter, filter_dimensions ); // Copying data into constant memory
-
-	int num_blocks{ 0 }, num_threads{ 0 };
-
-	std::cout << "Enter the amount of blocks and threads: ";
-	std::cin >> num_blocks >> num_threads;
-
-	dim3 grid( num_blocks,1, 1 );
-	dim3 block( num_threads, num_threads, num_threads );
-
-	//int shared_memsize{ 0 };
-
-	//std::cout << "\nEnter the Shared Memory size: ";
-	//std::cin >> shared_memsize;
-
-	//shared_memsize = ( shared_memsize * shared_memsize * shared_memsize ) * sizeof( double );
-
-	//convolution_3D<<<grid, block>>>( dev_InMatrix, dev_filter, dev_OutMatrix, radius, host_matrix_height, host_matrix_width, host_matrix_depth );
-	//constM_tiled_convolution_3d<<<grid, block, shared_memsize>>>( dev_InMatrix, dev_OutMatrix, host_matrix_height, host_matrix_width, host_matrix_depth );
-	constM_tiled_convolution_3d<<<grid, block>>>( dev_InMatrix, dev_OutMatrix, host_matrix_height, host_matrix_width, host_matrix_depth );
-
-	cudaMemcpy( host_OutMatrix, dev_OutMatrix, matrix_dimensions, cudaMemcpyDeviceToHost );
-
-	cudaFree( dev_InMatrix );
-	cudaFree( dev_OutMatrix );
-	cudaFree( filter );
-}*/
-
 void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatrix, int host_matrix_height, int host_matrix_width, int host_matrix_depth ){
 
-	int radius{ 1 };
+	int radius{ FILTER_RADIUS };
 
 	double* dev_InMatrix{ nullptr }, *dev_OutMatrix{ nullptr };
 
@@ -329,28 +220,23 @@ void set_up( double*& host_InMatrix, double*& host_filter, double*& host_OutMatr
 	cudaMalloc( ( void** ) &dev_OutMatrix, matrix_dimensions );
 
 	cudaMemcpy( dev_InMatrix, host_InMatrix, matrix_dimensions, cudaMemcpyHostToDevice );
-	//cudaMemcpy( dev_OutMatrix, host_OutMatrix, matrix_dimensions, cudaMemcpyHostToDevice );
 	cudaMemcpyToSymbol( filter, host_filter, filter_dimensions ); // Copying data into constant memory
 
 	int num_blocks{ 0 }, num_threads{ 0 };
 
-	std::cout << "Enter the amount of blocks and threads: ";
-	std::cin >> num_blocks >> num_threads;
+	std::cout << "Enter the amount of threads: ";
+	std::cin >> num_threads;
 
 	num_threads += radius;
 
-	dim3 grid( num_blocks, 1, 1 );
 	dim3 block( num_threads, num_threads, num_threads );
+
+	num_blocks = std::ceil( ( static_cast<double>( host_matrix_depth ) / static_cast<double>( num_threads - radius ) ) );
+
+	dim3 grid( num_blocks, num_blocks, num_blocks );
 
 	int shared_memsize = ( num_threads * num_threads * num_threads ) * sizeof( double );
 
-	//std::cout << "\nEnter the Shared Memory size: ";
-	//std::cin >> shared_memsize;
-
-	//shared_memsize = ( shared_memsize * shared_memsize * shared_memsize ) * sizeof( double );
-
-	//convolution_3D<<<grid, block>>>( dev_InMatrix, dev_filter, dev_OutMatrix, radius, host_matrix_height, host_matrix_width, host_matrix_depth );
-	//constM_tiled_convolution_3d<<<grid, block, shared_memsize>>>( dev_InMatrix, dev_OutMatrix, host_matrix_height, host_matrix_width, host_matrix_depth );
 	constM_tiled_convolution_3d<<<grid, block, shared_memsize>>>( dev_InMatrix, dev_OutMatrix, host_matrix_height, host_matrix_width, host_matrix_depth, radius );
 
 	cudaMemcpy( host_OutMatrix, dev_OutMatrix, matrix_dimensions, cudaMemcpyDeviceToHost );
