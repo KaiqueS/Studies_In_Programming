@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <random>
+#include <cmath>
 
 double*& generate_array( int size ){
 
@@ -39,11 +40,12 @@ __global__ void ConvergentSumReductionKernel( double* input, double* output ){
 
 	unsigned int i = threadIdx.x;
 
-	for( unsigned int stride = 0; stride < blockDim.x; stride /= 2 ){
+	// NOTE: remember that, by def, blockDim.x = input_size / 2, thus, threadIdx.x NEVER greater than input_size / 2
+	for( unsigned int stride = blockDim.x; stride >= 1; stride /= 2 ){
 
-		if( threadIdx.x >= stride ){
+		if( threadIdx.x < stride ){
 
-			input[ i ] += input[ i + stride ];
+			input[ ( 2 * blockDim.x ) - stride + threadIdx.x ] += input[ ( 2 * blockDim.x ) - ( 2 * stride ) + threadIdx.x ];
 
 			//printf( "%d, %d ", stride, threadIdx.x );
 		}
@@ -51,9 +53,9 @@ __global__ void ConvergentSumReductionKernel( double* input, double* output ){
 		__syncthreads( );
 	}
 
-	if( threadIdx.x == ( blockDim.x - 1 ) ){
+	if( threadIdx.x == 0 ){
 
-		*output = input[ blockDim.x - 1 ];
+		*output = input[ ( 2 * blockDim.x ) - 1 ];
 	}
 }
 
