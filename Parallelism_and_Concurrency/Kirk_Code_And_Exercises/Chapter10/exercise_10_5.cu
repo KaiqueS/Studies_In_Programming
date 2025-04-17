@@ -37,6 +37,10 @@ void print( double*& array, int size ){
 
 /// ANSWER: Instead of adding a parameter to the Kernel, I modified the amount of threads so as to ALWAYS launch the minimum amount of threads necessary to process an input
 
+/// NOTE: If you are using Visual Studio, you will face a problem when passing doubles as arguments to atomicAdd parameters.
+///		  To solve this, go to Project Properties > CUDA C/C++ > Code Generation, and use compute_60, sm_60, instead of compute_52, sm_52.
+///		  Else, the code will NOT compile, because the compiler will not find the correct definition of atomicAdd
+
 __global__ void CoarsenedSumReductionKernel( double* input, double* output, unsigned int Coarse_Factor ){
 
 	__shared__ extern double shared_input[ ]; // Shared-Memory size := block dimension BY CONSTRUCTION at kernel call through execution configuration parameters
