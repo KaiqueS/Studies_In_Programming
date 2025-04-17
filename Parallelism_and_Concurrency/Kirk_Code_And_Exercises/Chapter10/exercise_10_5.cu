@@ -35,6 +35,8 @@ void print( double*& array, int size ){
 /// PROBLEM - 5. Modify the kernel in Fig. 10.15 to work for an arbitrary length input that is not necessarily a multiple of COARSE_FACTOR * 2 * blockDim.x. Add an extra
 ///				 parameter N to the kernel that represents the length of the input.
 
+/// ANSWER: Instead of adding a parameter to the Kernel, I modified the amount of threads so as to ALWAYS launch the minimum amount of threads necessary to process an input
+
 __global__ void CoarsenedSumReductionKernel( double* input, double* output, unsigned int Coarse_Factor ){
 
 	__shared__ extern double shared_input[ ]; // Shared-Memory size := block dimension BY CONSTRUCTION at kernel call through execution configuration parameters
@@ -87,7 +89,7 @@ void kernel_setup( double*& host_array, double& output, int size ){
 	std::cout << "\nEnter the Coarse Factor: ";
 	std::cin >> coarse_factor;
 
-	unsigned int num_threads{ static_cast<unsigned int>( size ) / ( 2 * coarse_factor ) }; // Remember that atomicMax is a binary operation, i.e., involves 2 elements. Thus, 
+	unsigned int num_threads{ static_cast<unsigned int>( std::ceil( static_cast<double>( size ) / static_cast<double>( 2 * coarse_factor ) ) ) }; // Remember that atomicAdd is a binary operation, i.e., involves 2 elements. Thus, 2 * coarse_factor 
 
 	dim3 threads{ num_threads, 1, 1 };
 
