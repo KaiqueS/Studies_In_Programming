@@ -45,27 +45,20 @@ __global__ void Kogge_Stone_scan_kernel( double* input, double* output, unsigned
 
 	XY[ threadIdx.x ] = ( i < N ) ? input[ i ] : 0.0;
 
-	if( i == 0 ){
-
-		buffer[ threadIdx.x + offset ] = XY[ threadIdx.x ];
-	}
-
 	for( int stride = 1; stride < blockDim.x; stride *= 2 ){
 
 		__syncthreads( );
 
-		// As it is, the first thread, 0-indexed, does not perform the sum, because its element, the first element, need not be summed to anything,
-		// nor loads its element to the buffer array. Then, thread 1-indexed skips to the else condition and tries to sum something that simply is
-		// not there. This code is wrong.
-		if( ( static_cast<int>( log2f( stride ) ) % 2 == 0 ) ){
+		if( ( static_cast<int>( log2( static_cast<double>( stride ) ) ) ) % 2 == 0 ){
 
 			if( threadIdx.x >= stride ){
 
-				//printf( "%d:, %f, %f\n", threadIdx.x, XY[ threadIdx.x ], XY[ threadIdx.x - stride ] );
-
 				buffer[ threadIdx.x + offset ] = XY[ threadIdx.x ] + XY[ threadIdx.x - stride ];
+			}
 
-				printf( "%d: , %f\n", threadIdx.x, buffer[ threadIdx.x + offset ] );
+			else{
+
+				buffer[ threadIdx.x + offset ] = XY[ threadIdx.x ];
 			}
 		}
 
@@ -74,32 +67,18 @@ __global__ void Kogge_Stone_scan_kernel( double* input, double* output, unsigned
 			if( threadIdx.x >= stride ){
 
 				XY[ threadIdx.x ] = buffer[ threadIdx.x + offset ] + buffer[ threadIdx.x - stride + offset ];
+			}
 
-				printf( "%d: , %f\n", threadIdx.x, XY[ threadIdx.x ] );
+			else{
+
+				XY[ threadIdx.x ] = buffer[ threadIdx.x + offset ];
 			}
 		}
 	}
 
-	/*if( i == 0 ){
-
-		for( auto k = 0; k < offset; ++k ){
-
-			printf( "%f, ", XY[ k ] );
-		}
-
-		printf( "\n" );
-
-		for( auto k = 0; k < offset; ++k ){
-
-			printf( "%f, ", buffer[ k + offset ] );
-		}
-
-		printf( "\n" );
-	}*/
-
 	if( i < N ){
 
-		output[ i ] = ( static_cast<int>( ceil( static_cast<double>( N ) ) ) % 2 == 0 ) ? XY[ threadIdx.x ] : buffer[ threadIdx.x + offset ];
+		output[ i ] = ( static_cast<int>( ceil( static_cast<double>( N ) ) ) % 2 != 0 ) ? XY[ threadIdx.x ] : buffer[ threadIdx.x + offset ];
 	}
 }
 
