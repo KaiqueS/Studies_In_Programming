@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <iostream>
-#include <math.h>
 #include <random>
 
 double*& generate_array( int size ){
@@ -46,15 +45,27 @@ __global__ void Kogge_Stone_scan_kernel( double* input, double* output, unsigned
 
 	XY[ threadIdx.x ] = ( i < N ) ? input[ i ] : 0.0;
 
+	if( i == 0 ){
+
+		buffer[ threadIdx.x + offset ] = XY[ threadIdx.x ];
+	}
+
 	for( int stride = 1; stride < blockDim.x; stride *= 2 ){
 
 		__syncthreads( );
 
+		// As it is, the first thread, 0-indexed, does not perform the sum, because its element, the first element, need not be summed to anything,
+		// nor loads its element to the buffer array. Then, thread 1-indexed skips to the else condition and tries to sum something that simply is
+		// not there. This code is wrong.
 		if( ( static_cast<int>( log2f( stride ) ) % 2 == 0 ) ){
 
 			if( threadIdx.x >= stride ){
 
+				//printf( "%d:, %f, %f\n", threadIdx.x, XY[ threadIdx.x ], XY[ threadIdx.x - stride ] );
+
 				buffer[ threadIdx.x + offset ] = XY[ threadIdx.x ] + XY[ threadIdx.x - stride ];
+
+				printf( "%d: , %f\n", threadIdx.x, buffer[ threadIdx.x + offset ] );
 			}
 		}
 
@@ -63,13 +74,32 @@ __global__ void Kogge_Stone_scan_kernel( double* input, double* output, unsigned
 			if( threadIdx.x >= stride ){
 
 				XY[ threadIdx.x ] = buffer[ threadIdx.x + offset ] + buffer[ threadIdx.x - stride + offset ];
+
+				printf( "%d: , %f\n", threadIdx.x, XY[ threadIdx.x ] );
 			}
 		}
 	}
 
+	/*if( i == 0 ){
+
+		for( auto k = 0; k < offset; ++k ){
+
+			printf( "%f, ", XY[ k ] );
+		}
+
+		printf( "\n" );
+
+		for( auto k = 0; k < offset; ++k ){
+
+			printf( "%f, ", buffer[ k + offset ] );
+		}
+
+		printf( "\n" );
+	}*/
+
 	if( i < N ){
 
-		output[ i ] = XY[ threadIdx.x ];
+		output[ i ] = ( static_cast<int>( ceil( static_cast<double>( N ) ) ) % 2 == 0 ) ? XY[ threadIdx.x ] : buffer[ threadIdx.x + offset ];
 	}
 }
 
@@ -89,7 +119,7 @@ void kernel_launch( double*& host_input, double*& host_output, int size ){
 	std::cout << "\nEnter the section size: ";
 	std::cin >> section_size;
 
-	section_size *= sizeof( double );
+	//section_size *= sizeof( double );
 
 	std::cout << "\n";
 
@@ -100,7 +130,7 @@ void kernel_launch( double*& host_input, double*& host_output, int size ){
 
 	std::cout << "\n";
 
-	dim3 blocks{ 1 };
+	dim3 blocks{ 1 }; // TODO: fix this! This is incorrect. The correct amount of block should be input size / section size
 	dim3 threads{ num_of_threads };
 
 	Kogge_Stone_scan_kernel<<<blocks, threads, section_size>>>( dev_input, dev_output, size, section_size );
