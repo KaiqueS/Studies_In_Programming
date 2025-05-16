@@ -35,8 +35,60 @@ void print_array( double*& array, int size ){
 
 /// ANSWER:
 
-__global__ void First_Kernel( ){
+// NOTE: I will be using the Brent-Kung Algorithm here.
+__global__ void First_Kernel( double* input, double* output, unsigned int input_size, unsigned int Section_Size ){
 
+	__shared__ extern double Shared_Input[ ];
+
+	unsigned int i = ( 2 * blockIdx.x * blockDim.x ) + threadIdx.x;
+
+	if( i < input_size ){
+
+		Shared_Input[ threadIdx.x ] = input[ i ];
+		//Shared_Input[ threadIdx.x + ( input_size / 2 ) ] = input[ i + ( input_size / 2 ) ];
+	}
+
+	if( ( i + blockDim.x ) < input_size ){
+
+		Shared_Input[ threadIdx.x + blockDim.x ] = input[ i + blockDim.x ];
+	}
+
+	for( unsigned int stride = 1; stride <= blockDim.x; stride *= 2 ){
+
+		__syncthreads( );
+
+		unsigned int index = ( threadIdx.x + 1 ) * ( 2 * stride ) - 1;
+
+		if( index < Section_Size ){
+
+			Shared_Input[ index ] += Shared_Input[ index -  stride ];
+		}
+	}
+
+	for( int stride = ( Section_Size / 4 ); stride > 0; stride /= 2 ){
+
+		__syncthreads( );
+
+		unsigned int index = ( threadIdx.x + 1 ) * ( stride * 2 ) - 1;
+
+		if( ( index + stride ) < Section_Size ){
+
+			Shared_Input[ index + stride ] += Shared_Input[ index ];
+		}
+	}
+
+	__syncthreads( );
+
+	if( i < input_size ){
+
+		Shared_Input[ threadIdx.x ];
+	}
+
+	if( ( i + blockDim.x ) < input_size ){
+
+		output[ i + blockDim.x ] = Shared_Input[ threadIdx.x + blockDim.x ];
+		//output[ i + blockDim.x + ( input_size / 2 ) ] = Shared_Input[ threadIdx.x + blockDim.x + ( input_size / 2 ) ];
+	}
 }
 
 __global__ void Second_Kernel( ){
@@ -49,14 +101,31 @@ __global__ void Third_Kernel( ){
 
 }
 
-void kernel_setup( ){
+void kernel_setup( double*& host_input, double*& host_output, unsigned int size ){
 
+	double* dev_in{ nullptr }, *dev_out{ nullptr };
 
+	unsigned int array_size = size * sizeof( double );
+
+	cudaMalloc( ( void** ) &dev_in, array_size );
+	cudaMalloc( ( void** ) &dev_out, array_size );
+
+	cudaMemcpy( dev_in, host_input, array_size, cudaMemcpyHostToDevice );
+
+	dim3 blocks{ 1, 1, 1 };
+	dim3 threads{ ( size / 2 ) };
+
+	First_Kernel<<<blocks, threads, array_size>>>( dev_in, dev_out, size, size );
+
+	cudaMemcpy( host_output, dev_out, array_size, cudaMemcpyDeviceToHost );
+
+	cudaFree( dev_in );
+	cudaFree( dev_out );
 }
 
 int main( ){
 
-	int size{ 0 };
+	unsigned int size{ 0 };
 
 	std::cout << "Enter the size of the array: ";
 	std::cin >> size;
@@ -64,8 +133,15 @@ int main( ){
 	std::cout << "\n";
 
 	double* array = generate_array( size );
+	double* output = new double[ size ];
 
 	print_array( array, size );
 
-	delete[ ] array;
+	kernel_setup( array, output, size );
+
+	std::cout << "\n";
+
+	print_array( output, size );
+
+	delete[ ] array, output;
 }
