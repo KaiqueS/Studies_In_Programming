@@ -36,6 +36,8 @@ void print_array( double*& array, int size ){
 /// ANSWER:
 
 // NOTE: I will be using the Brent-Kung Algorithm here.
+// PROBLEM: when the size of the input array = 6, the last prefix sum is wrong
+//			Seems like a rounding error when dividing Section_Size / 4
 __global__ void First_Kernel( double* input, double* output, unsigned int input_size, unsigned int Section_Size ){
 
 	__shared__ extern double Shared_Input[ ];
@@ -57,7 +59,7 @@ __global__ void First_Kernel( double* input, double* output, unsigned int input_
 
 		__syncthreads( );
 
-		unsigned int index = ( threadIdx.x + 1 ) * ( 2 * stride ) - 1;
+		unsigned int index = ( ( threadIdx.x + 1 ) * ( 2 * stride ) ) - 1;
 
 		if( index < Section_Size ){
 
@@ -65,11 +67,26 @@ __global__ void First_Kernel( double* input, double* output, unsigned int input_
 		}
 	}
 
-	for( int stride = ( Section_Size / 4 ); stride > 0; stride /= 2 ){
+	int correct_rounding{ 0 };
+
+	// NOTE: this is ugly, but necessary. The example code on the book is wrong. The code output is wrong/right depending on how Section_Size / 4 is rounded by the compiler.
+	//		 The rule below captures all cases and correctly rounds the quocient.
+	if( Section_Size < 4 ){
+
+		correct_rounding = static_cast<int>( ceil( static_cast<double>( Section_Size ) / 4.0 ) );
+	}
+
+	else{
+
+		correct_rounding = ( static_cast<int>( ceil( static_cast<double>( Section_Size ) / 4.0 ) ) % 2 == 0 ) ? static_cast<int>( ceil( static_cast<double>( Section_Size ) / 4.0 ) ) :
+																												static_cast<int>( floor( static_cast<double>( Section_Size ) / 4.0 ) );
+	}
+
+	for( int stride = correct_rounding; stride > 0; stride /= 2 ){
 
 		__syncthreads( );
 
-		unsigned int index = ( threadIdx.x + 1 ) * ( stride * 2 ) - 1;
+		unsigned int index = ( ( threadIdx.x + 1 ) * stride * 2 ) - 1;
 
 		if( ( index + stride ) < Section_Size ){
 
@@ -81,7 +98,7 @@ __global__ void First_Kernel( double* input, double* output, unsigned int input_
 
 	if( i < input_size ){
 
-		Shared_Input[ threadIdx.x ];
+		output[ i ] = Shared_Input[ threadIdx.x ];
 	}
 
 	if( ( i + blockDim.x ) < input_size ){
@@ -113,7 +130,7 @@ void kernel_setup( double*& host_input, double*& host_output, unsigned int size 
 	cudaMemcpy( dev_in, host_input, array_size, cudaMemcpyHostToDevice );
 
 	dim3 blocks{ 1, 1, 1 };
-	dim3 threads{ ( size / 2 ) };
+	dim3 threads{ static_cast<unsigned int>( std::ceil( ( static_cast<double>( size ) / 2.0 ) ) ) };
 
 	First_Kernel<<<blocks, threads, array_size>>>( dev_in, dev_out, size, size );
 
