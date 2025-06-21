@@ -137,22 +137,33 @@ __device__ int co_rank( int k, int* A, int m, int* B, int n ){
 
 	bool active = true;
 
+	// PROBLEM: somewhere here. I think the problem is in either if or the else if, maybe both. There are situations where
+	//			they are NEVER FALSE s.t. the program NEVER gets into the else{} clause to make active = false. Maybe the
+	//			bitwise division >> is not working properly
 	while( active ){
 
+		// MORE ON THE PROBLEM: what I think is happening is that, when we enter the if, we increment j in such a way that, on the next iteration of the while-loop,
+		//						the conditions to enter the else if are satisfied. I.e., entering the if changes the values of the variables in such a way that it
+		//						causes the conditions of the else-if to be met. Similarly, entereing the else-if causes the conditions of the if to also be met. And
+		//						this happens because, on the if, we increment j, and on the else-if, we increment i. This means that delta is fucking everything up.
 		if( ( i > 0 ) && ( j < n ) && ( A[ i - 1 ] > B[ j ] ) ){
 
-			delta = ( ( i - i_low + 1 ) >> 1 );
+			delta = static_cast<int>( ceil( static_cast<double>( i - i_low ) / 2.0 ) );
 			j_low = j;
-			j += delta;
-			i -= delta;
+			j = j + delta;
+			i = i - delta;
+
+			printf( "first conditional\n" );
 		}
 
 		else if( ( j > 0 ) && ( i < m ) && ( B[ j - i ] >= A[ i ] ) ){
 
-			delta = ( ( j - j_low + 1 ) >> 1 );
+			delta = static_cast<int>( ceil( static_cast<double>( j - j_low ) / 2.0 ) );
 			i_low = i;
-			i += delta;
-			j -= delta;
+			i = i + delta;
+			j = j - delta;
+
+			printf( "second conditional\n" );
 		}
 
 		else{
@@ -164,6 +175,7 @@ __device__ int co_rank( int k, int* A, int m, int* B, int n ){
 	return i;
 }
 
+// PROBLEM: when input = 100, blocks = 10, threads = 2
 __global__ void merge_basic_kernel( int* A, int m, int* B, int n, int* C ){
 
 	int tid = ( blockIdx.x * blockDim.x ) + threadIdx.x;
@@ -172,6 +184,7 @@ __global__ void merge_basic_kernel( int* A, int m, int* B, int n, int* C ){
 	int k_curr = ( tid * elementsPerThread );
 	int k_next = static_cast<int>( min( ( ( tid + 1 ) * elementsPerThread ), ( m + n ) ) );
 
+	// PROBLEM: gpu is going haywire when calculating i_curr
 	int i_curr = co_rank( k_curr, A, m, B, n );
 	int i_next = co_rank( k_next, A, m, B, n );
 	int j_curr = k_curr - i_curr;
