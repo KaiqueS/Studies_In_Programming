@@ -142,28 +142,21 @@ __device__ int co_rank( int k, int* A, int m, int* B, int n ){
 	//			bitwise division >> is not working properly
 	while( active ){
 
-		// MORE ON THE PROBLEM: what I think is happening is that, when we enter the if, we increment j in such a way that, on the next iteration of the while-loop,
-		//						the conditions to enter the else if are satisfied. I.e., entering the if changes the values of the variables in such a way that it
-		//						causes the conditions of the else-if to be met. Similarly, entereing the else-if causes the conditions of the if to also be met. And
-		//						this happens because, on the if, we increment j, and on the else-if, we increment i. This means that delta is fucking everything up.
 		if( ( i > 0 ) && ( j < n ) && ( A[ i - 1 ] > B[ j ] ) ){
 
 			delta = static_cast<int>( ceil( static_cast<double>( i - i_low ) / 2.0 ) );
 			j_low = j;
 			j = j + delta;
 			i = i - delta;
-
-			printf( "first conditional\n" );
 		}
 
-		else if( ( j > 0 ) && ( i < m ) && ( B[ j - i ] >= A[ i ] ) ){
+		// FIX: the problem was actually here, instead of B[ j - 1 ], I wrote B[ j - i ], and then things went haywire.
+		else if( ( j > 0 ) && ( i < m ) && ( B[ j - 1 ] >= A[ i ] ) ){
 
 			delta = static_cast<int>( ceil( static_cast<double>( j - j_low ) / 2.0 ) );
 			i_low = i;
 			i = i + delta;
 			j = j - delta;
-
-			printf( "second conditional\n" );
 		}
 
 		else{
@@ -197,7 +190,81 @@ __global__ void merge_basic_kernel( int* A, int m, int* B, int n, int* C ){
 
 __global__ void merge_tiled_kernel( int* A, int m, int* B, int n, int* C, int tile_size ){
 
+	extern __shared__ int shareAB[ ];
 
+	int* A_S = &shareAB[ 0 ];
+	int* B_S = &shareAB[ tile_size ];
+	int C_curr = blockIdx.x * static_cast<int>( ceil( static_cast<double>( m + n ) / static_cast<double>( gridDim.x ) ) );
+	int C_next = static_cast<int>( min( ceil( static_cast<double>( m + n ) / static_cast<double>( gridDim.x ) ), static_cast<double>( m + n ) ) );
+
+	if( threadIdx.x == 0 ){
+
+		A_S[ 0 ] = co_rank( C_curr, A, m, B, n );
+		A_S[ 1 ] = co_rank( C_next, A, m, B, n );
+	}
+
+	__syncthreads( );
+
+	int A_curr = A_S[ 0 ];
+	int A_next = A_S[ 1 ];
+	int B_curr = C_curr - A_curr;
+	int B_next = C_next - A_next;
+
+	__syncthreads( );
+
+	int counter = 0;
+	
+	int C_length = C_next - C_curr;
+	int A_length = A_next - A_curr;
+	int B_length = B_next - B_curr;
+	
+	int total_iteration = static_cast<int>( ceil( static_cast<double>( C_length ) / static_cast<double>( tile_size ) ) );
+	
+	int C_completed = 0;
+	int A_consumed = 0;
+	int B_consumed = 0;
+
+	while( counter < total_iteration ){
+
+		for( int i = 0; i < tile_size; i += blockDim.x ){
+
+			if( ( i + threadIdx.x ) < ( A_length - A_consumed ) ){
+
+				A_S[ i + threadIdx.x ] = A[ A_curr + A_consumed + i + threadIdx.x ];
+			}
+		}
+
+		for( int i = 0; i < tile_size; i += blockDim.x ){
+
+			if( ( i + threadIdx.x ) < ( B_length - B_consumed ) ){
+
+				B_S[ i + threadIdx.x ] = B[ B_curr + B_consumed + i + threadIdx.x ];
+			}
+		}
+
+		__syncthreads( );
+
+		int c_curr = threadIdx.x * ( tile_size / blockDim.x );
+		int c_next = ( threadIdx.x + 1 ) * ( tile_size / blockDim.x );
+		c_curr = ( c_curr <= ( C_length - C_completed ) ) ? c_curr : ( C_length - C_completed );
+		c_next = ( c_next <= ( C_length - C_completed ) ) ? c_next : ( C_length - C_completed );
+
+		int a_curr = co_rank( c_curr, A_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( A_length - A_consumed ) ) ), B_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( B_length - B_consumed ) ) ) );
+		int b_curr = c_curr - a_curr;
+
+		int a_next = co_rank( c_next, A_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( A_length - A_consumed ) ) ), B_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( B_length - B_consumed ) ) ) );
+		int b_next = c_next - a_next;
+
+		merge_sequential<<<gridDim.x, blockDim.x>>>( ( A_S + a_curr ), ( a_next - a_curr ), ( B_S + b_curr ), ( b_next - b_curr ), ( C + C_curr + C_completed + c_curr ) );
+
+		counter++;
+
+		C_completed += tile_size;
+		A_consumed += co_rank( tile_size, A_S, tile_size, B_S, tile_size );
+		B_consumed = C_completed - A_consumed;
+
+		__syncthreads( );
+	}
 }
 
 __global__ void merge_ciruclar_buffer_kernel( int* A, int m, int* B, int n, int* C ){
