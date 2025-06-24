@@ -267,9 +267,185 @@ __global__ void merge_tiled_kernel( int* A, int m, int* B, int n, int* C, int ti
 	}
 }
 
-__global__ void merge_ciruclar_buffer_kernel( int* A, int m, int* B, int n, int* C ){
+__device__ int co_rank_circular( int k, int* A, int m, int* B, int n, int A_S_start, int B_S_start, int tile_size ){
 
+	int i = ( k < m ) ? k: m;
+	int j = k - i;
+	
+	int i_low = 0 > ( k - n ) ? 0 : ( k - n );
+	int j_low = 0 > ( k - m ) ? 0 : ( k - m );
 
+	int delta{ 0 };
+
+	bool active = true;
+
+	while( active ){
+
+		int i_cir = ( A_S_start + i ) % tile_size;
+		int i_m_l_cir = ( A_S_start + i - 1 ) % tile_size;
+		
+		int j_cir = ( B_S_start + j ) % tile_size;
+		int j_m_l_cir = ( B_S_start + i - 1 ) % tile_size;
+
+		if( ( i > 0 ) && ( j < n ) && ( A[ i_m_l_cir ] > B[ j_cir ] ) ){
+
+			delta = ( ( i - i_low + 1 ) >> 1 );
+			j_low = j;
+			i = i - delta;
+			j = j + delta;
+		}
+
+		else if( ( j > 0 ) && ( i < m ) && ( B[ j_m_l_cir ] >= A[ i_cir ] ) ){
+
+			delta = ( ( j - j_low + 1 ) >> 1 );
+			i_low = i;
+			i = i + delta;
+			j = j - delta;
+		}
+
+		else{
+
+			active = false;
+		}
+	}
+
+	return i;
+}
+
+__global__ void merge_sequential_circular( int* A, int m, int* B, int n, int* C, int A_S_start, int B_S_start, int tile_size ){
+
+	int i{ 0 }, j{ 0 }, k{ 0 };
+
+	while( ( i < m ) && ( j < n ) ){
+
+		int i_cir = ( A_S_start + i ) % tile_size;
+		int j_cir = ( B_S_start + j ) % tile_size;
+
+		if( A[ i_cir ] <= B[ j_cir ] ){
+
+			C[ k++ ] = A[ i_cir ];
+			i++;
+		}
+
+		else{
+
+			C[ k++ ] = B[ j_cir ];
+			j++;
+		}
+	}
+
+	if( i == m ){
+
+		for( ; j < n; j++ ){
+
+			int j_cir = ( B_S_start + j ) % tile_size;
+			C[ k++ ] = B[ j_cir ];
+		}
+	}
+
+	else{
+
+		for( ; i < m; i++ ){
+
+			int i_cir = ( A_S_start + i ) % tile_size;
+			C[ k++ ] = A[ i_cir ];
+		}
+	}
+}
+
+__global__ void merge_circular_buffer_kernel( int* A, int m, int* B, int n, int* C, int tile_size ){
+
+	extern __shared__ int shareAB[ ];
+
+	int* A_S = &shareAB[ 0 ];
+	int* B_S = &shareAB[ tile_size ];
+	int C_curr = blockIdx.x * static_cast<int>( ceil( static_cast<double>( m + n ) / static_cast<double>( gridDim.x ) ) );
+	int C_next = static_cast<int>( min( ceil( static_cast<double>( m + n ) / static_cast<double>( gridDim.x ) ), static_cast<double>( m + n ) ) );
+
+	if( threadIdx.x == 0 ){
+
+		A_S[ 0 ] = co_rank( C_curr, A, m, B, n );
+		A_S[ 1 ] = co_rank( C_next, A, m, B, n );
+	}
+
+	__syncthreads( );
+
+	int A_curr = A_S[ 0 ];
+	int A_next = A_S[ 1 ];
+	int B_curr = C_curr - A_curr;
+	int B_next = C_next - A_next;
+
+	__syncthreads( );
+
+	int counter = 0;
+
+	int C_length = C_next - C_curr;
+	int A_length = A_next - A_curr;
+	int B_length = B_next - B_curr;
+	
+	int total_iteration = static_cast<int>( ceil( static_cast<double>( C_length ) / static_cast<double>( tile_size ) ) );
+	
+	int C_completed = 0;
+	int A_consumed = 0;
+	int B_consumed = 0;
+
+	int A_S_start = 0;
+	int B_S_start = 0;
+
+	int A_S_consumed = tile_size;
+	int B_S_consumed = tile_size;
+
+	while( counter < total_iteration ){
+
+		for( int i = 0; i < A_S_consumed; i += blockDim.x ){
+
+			if( ( i + threadIdx.x ) < ( A_length - A_consumed ) && ( i + threadIdx.x ) < A_S_consumed ){
+
+				A_S[ ( A_S_start + ( tile_size - A_S_consumed ) + i + threadIdx.x ) % tile_size ] = A[ A_curr + A_consumed + i + threadIdx.x ];
+			}
+		}
+
+		for( int i = 0; i < B_S_consumed; i += blockDim.x ){
+
+			if( ( i + threadIdx.x ) < ( B_length - B_consumed ) && ( i + threadIdx.x ) < B_S_consumed ){
+
+				// NOTE: I think the - A_S_consumed here should have been B_S_consumed instead
+				//B_S[ ( B_S_start + ( tile_size - A_S_consumed ) + i + threadIdx.x ) % tile_size ] = B[ B_curr + B_consumed + i + threadIdx.x ];
+				B_S[ ( B_S_start + ( tile_size - B_S_consumed ) + i + threadIdx.x ) % tile_size ] = B[ B_curr + B_consumed + i + threadIdx.x ];
+			}
+		}
+
+		int c_curr = threadIdx.x * ( tile_size / blockDim.x );
+		int c_next = ( threadIdx.x + 1 ) * ( tile_size / blockDim.x );
+
+		c_curr = ( c_curr <= ( C_length - C_completed ) ) ? c_curr : ( C_length - C_completed );
+		c_next = ( c_next <= ( C_length - C_completed ) ) ? c_next : ( C_length - C_completed );
+
+		int a_curr = co_rank_circular( c_curr, A_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( A_length - A_consumed ) ) ),
+									           B_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( B_length - B_consumed ) ) ), A_S_start, B_S_start, tile_size );
+		int b_curr = c_curr - a_curr;
+
+		int a_next = co_rank_circular( c_next, A_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( A_length - A_consumed ) ) ),
+									           B_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( B_length - B_consumed ) ) ), A_S_start, B_S_start, tile_size );
+		int b_next = c_next - a_next;
+
+		merge_sequential_circular<<<gridDim.x, blockDim.x>>>( A_S, ( a_next -  a_curr ), B_S, ( b_next - b_curr ), ( C + C_curr + C_completed + c_curr ), A_S_start, B_S_start, tile_size );
+
+		counter++;
+
+		A_S_consumed = co_rank_circular( static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( C_length - C_completed ) ) ), A_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( A_length - A_consumed ) ) ),
+																																					 B_S, static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( B_length - B_consumed ) ) ),
+										 A_S_start, B_S_start, tile_size );
+		B_S_consumed = static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( C_length - C_completed ) ) ) - A_S_consumed;
+		A_consumed += A_S_consumed;
+		C_completed += static_cast<int>( min( static_cast<double>( tile_size ), static_cast<double>( C_length - C_completed ) ) );
+		B_consumed = C_completed - A_consumed;
+
+		A_S_start = ( A_S_start + A_S_consumed ) % tile_size;
+		B_S_start = ( B_S_start + B_S_consumed ) % tile_size;
+
+		__syncthreads( );
+	}
 }
 
 
