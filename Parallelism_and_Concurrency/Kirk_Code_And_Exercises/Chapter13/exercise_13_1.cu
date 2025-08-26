@@ -35,13 +35,73 @@ void print( int*& array, int size ){
 
 /// ANSWER:
 
-__global__ void exclusiveScan( unsigned int* bits, unsigned int N ){
+// NOTE: I am  using the Brent-Kung Scan Algorithm here, but as an Exclusive Scan
+__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, unsigned int Section_Size ){
 
+	__shared__ extern unsigned int Shared_Input[ ];
+
+	unsigned int i = ( 2 * blockIdx.x * blockDim.x ) + threadIdx.x;
+
+	if( ( i < N ) && ( threadIdx.x != 0 ) ){
+
+		Shared_Input[ threadIdx.x ] = bits[ i - 1 ];
+	}
+
+	if( ( i + blockDim.x ) < N ){
+
+		Shared_Input[ threadIdx.x + blockDim.x ] = bits[ i + blockDim.x ];
+	}
+
+	for( unsigned int stride = 1; stride <= blockDim.x; stride *= 2 ){
+
+		__syncthreads( );
+
+		unsigned int index = ( ( threadIdx.x + 1 ) * 2 * stride ) - 1;
+
+		if( index < Section_Size ){
+
+			Shared_Input[ index ] += Shared_Input[ index - stride ];
+		}
+	}
+
+	int correct_rounding{ 0 };
+
+	// EXPLANATION: stride must be in the form of Powers of 2, but the code on the book allows for values that are not powers of 2. Thus, we pick the smallest power of 2 that is
+	//				greater than the quotient Section_Size / 4.
+	correct_rounding = static_cast<int>( pow( 2.0, ceil( log2( static_cast<double>( Section_Size ) / 4.0 ) ) ) );
+
+	for( int stride = correct_rounding; stride > 0; stride /= 2 ){
+
+		__syncthreads( );
+
+		unsigned int index = ( ( threadIdx.x + 1 ) * stride * 2 ) - 1;
+
+		if( ( index + stride ) < Section_Size ){
+
+			Shared_Input[ index + stride ] += Shared_Input[ index ];
+		}
+	}
+
+	__syncthreads( );
+
+	if( i < N ){
+
+		unsigned int holder = Shared_Input[ threadIdx.x ];
+
+		output[ i ] = holder;
+	}
+
+	if( ( i + blockDim.x ) < N ){
+
+		unsigned int holder = Shared_Input[ threadIdx.x + blockDim.x ];
+
+		output[ i + blockDim.x ] = holder;
+	}
 }
 
 __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter ){
 
-	__shared__ extern int shared[ ];
+	__shared__ extern int shared_bits[ ];
 
 	unsigned int i = ( blockIdx.x * blockDim.x ) + threadIdx.x;
 
@@ -51,15 +111,18 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 
 		key = input[ i ];
 		bit = ( key >> iter ) & 1;
-		bits[ i ] = bit;
+		shared_bits[ i ] = bit;
 	}
 
-	exclusiveScan<<<gridDim.x, blockDim.x>>>( bits, N );
+	__syncthreads( );
+
+	// Count the amount of 1's before i
+	exclusiveScan<<<gridDim.x, blockDim.x>>>( shared_bits, N );
 
 	if( i < N ){
 
-		unsigned int OnesBefore = bits[ i ];
-		unsigned int OnesTotal = bits[ N ];
+		unsigned int OnesBefore = shared_bits[ i ];
+		unsigned int OnesTotal = shared_bits[ N ]; // This means that shared memory MUST have N elements
 		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore );
 
 		output[ dst ] = key;
