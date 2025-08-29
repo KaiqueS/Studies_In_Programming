@@ -97,6 +97,28 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 		output[ i + blockDim.x ] = holder;
 	}
+
+	// Block Synchronization
+
+	__shared__ extern unsigned int previous_count[ ];
+
+	if( threadIdx.x == 0 ){
+
+		while( atomicAdd( &flags[ bid ], 0 ) == 0 ){
+
+
+		}
+
+		previous_count = scan_value[ bid ];
+
+		scan_value[ bid + 1 ] = previous_sum + local_sum;
+
+		__threadfence( );
+
+		atomicAdd( &flags[ bid + 1 ], 1 );
+	}
+
+	__syncthreads( );
 }
 
 __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter ){
