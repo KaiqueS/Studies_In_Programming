@@ -100,16 +100,29 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	// Block Synchronization
 
-	__shared__ extern unsigned int previous_count[ ];
+	__shared__ unsigned int previous_sum{ };
+	__shared__ unsigned int bid_s{ };
+
+
 
 	if( threadIdx.x == 0 ){
 
+		bid_s = atomicAdd( blockCounter, 1 );
+	}
+
+	__syncthreads( );
+
+	unsigned int bid = bid_s;
+
+	if( threadIdx.x == 0 ){
+
+		// bid = blockId
 		while( atomicAdd( &flags[ bid ], 0 ) == 0 ){
 
 
 		}
 
-		previous_count = scan_value[ bid ];
+		previous_sum = scan_value[ bid ];
 
 		scan_value[ bid + 1 ] = previous_sum + local_sum;
 
