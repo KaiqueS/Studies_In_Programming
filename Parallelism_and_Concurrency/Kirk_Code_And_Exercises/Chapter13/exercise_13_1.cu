@@ -36,7 +36,18 @@ void print( int*& array, int size ){
 /// ANSWER:
 
 // NOTE: I am  using the Brent-Kung Scan Algorithm here, but as an Exclusive Scan
-__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, unsigned int Section_Size ){
+__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, unsigned int Section_Size, bool* flags, int* scan_value, int* blockCounter ){
+
+	__shared__ unsigned int bid_s{ };
+
+	if( threadIdx.x == 0 ){
+
+		bid_s = atomicAdd( blockCounter, 1 );
+	}
+
+	__syncthreads( );
+
+	unsigned int bid = bid_s;
 
 	__shared__ extern unsigned int Shared_Input[ ];
 
@@ -101,18 +112,6 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	// Block Synchronization
 
 	__shared__ unsigned int previous_sum{ };
-	__shared__ unsigned int bid_s{ };
-
-
-
-	if( threadIdx.x == 0 ){
-
-		bid_s = atomicAdd( blockCounter, 1 );
-	}
-
-	__syncthreads( );
-
-	unsigned int bid = bid_s;
 
 	if( threadIdx.x == 0 ){
 
@@ -134,7 +133,7 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	__syncthreads( );
 }
 
-__global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter ){
+__global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter, bool* flags, int* scan_value, int* blockCounter ){
 
 	__shared__ extern int shared_bits[ ];
 
@@ -152,7 +151,7 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 	__syncthreads( );
 
 	// Count the amount of 1's before i
-	exclusiveScan<<<gridDim.x, blockDim.x>>>( shared_bits, N );
+	exclusiveScan<<<gridDim.x, blockDim.x>>>( shared_bits, output, N,  );
 
 	if( i < N ){
 
@@ -168,6 +167,8 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 
 	unsigned int* dev_input{ nullptr }, * dev_output{ nullptr }, * dev_bits{ nullptr };
 	unsigned int dev_N{ 0 }, dev_iter{ 0 };
+	int* scan_value{ 0 }, *block_counter{ 0 };
+	bool* flags{ false };
 
 	unsigned int array_size = size * sizeof( int );
 	unsigned int N_size = host_N * sizeof( unsigned int );
@@ -193,6 +194,10 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	std::cout << "\nEnter the number of threads: ";
 	std::cin >> num_threads;
 
+	cudaMalloc( ( void** ) &scan_value, num_blocks * sizeof( unsigned int ) );
+	cudaMalloc( ( void** ) &flags, num_blocks * sizeof( bool ) );
+	cudaMalloc( ( void** ) &block_counter, sizeof( int ) );
+
 	dim3 blocks{ num_blocks };
 	dim3 threads{ num_threads };
 
@@ -210,6 +215,9 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	cudaFree( dev_bits );
 	cudaFree( &dev_N );
 	cudaFree( &dev_iter );
+	cudaFree( scan_value );
+	cudaFree( block_counter );
+	cudaFree( flags );
 }
 
 int main( ){
