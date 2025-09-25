@@ -4,13 +4,14 @@
 #include <stdio.h>
 #include <iostream>
 #include <random>
+#include <bitset>
 
-int*& generate_array( int size ) {
+unsigned int*& generate_array( int size ) {
 
-	int* array = new int[ size ];
+	unsigned int* array = new unsigned int[ size ];
 
 	std::random_device dev;
-	std::uniform_int_distribution<int> dist( 0, 1 );
+	std::uniform_int_distribution<int> dist( -( size * size ), ( size * size ) );
 	std::mt19937_64 rng( dev( ) );
 
 	for( auto i = 0; i < size; ++i ) {
@@ -21,11 +22,11 @@ int*& generate_array( int size ) {
 	return array;
 }
 
-void print( int*& array, int size ) {
+void print( unsigned int*& array, int size ) {
 
 	for( auto i = 0; i < size; ++i ) {
 
-		printf( "%d ", array[ i ] );
+		std::cout << std::bitset<32>( array[ i ] ) << " ";
 	}
 
 	printf( "\n" );
@@ -146,10 +147,12 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 		shared_bits[ i ] = bit;
 	}
 
+	printf( "test" );
+
 	__syncthreads( );
 
 	// Count the amount of 1's before i
-	exclusiveScan<<<gridDim.x, blockDim.x>>> ( shared_bits, output, N, ( N / gridDim.x ), flags, scan_value, blockCounter );
+	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int ) >> > ( shared_bits, output, N, ( N / gridDim.x ), flags, scan_value, blockCounter );
 
 	if( i < N ) {
 
@@ -168,7 +171,7 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	int* scan_value{ 0 }, * block_counter{ 0 };
 	int* flags{ false }, * dev_flags;
 
-	unsigned int array_size = size * sizeof( int );
+	unsigned int array_size = size * sizeof( unsigned int );
 	unsigned int N_size = host_N * sizeof( unsigned int );
 	unsigned int iter_size = host_iter * sizeof( unsigned int );
 
@@ -196,6 +199,8 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	cudaMalloc( ( void** ) &dev_flags, num_blocks * sizeof( int ) );
 	cudaMalloc( ( void** ) &block_counter, sizeof( int ) );
 
+	flags = new int[ num_blocks ];
+
 	flags[ 0 ] = 1;
 
 	for( auto i = 1; i < num_blocks; ++i ) {
@@ -203,7 +208,7 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 		flags[ i ] = 0;
 	}
 
-	cudaMemcpy( dev_flags, flags, num_blocks * sizeof( bool ), cudaMemcpyHostToDevice );
+	cudaMemcpy( dev_flags, flags, num_blocks * sizeof( int ), cudaMemcpyHostToDevice );
 
 	dim3 blocks{ num_blocks };
 	dim3 threads{ num_threads };
@@ -215,7 +220,7 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 
 	shared_memsize *= sizeof( unsigned int );
 
-	radix_sort_iter <<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, dev_N, dev_iter, dev_flags, scan_value, block_counter );
+	radix_sort_iter<<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, dev_N, dev_iter, dev_flags, scan_value, block_counter );
 
 	cudaFree( dev_input );
 	cudaFree( dev_output );
@@ -234,9 +239,15 @@ int main( ) {
 	std::cout << "Enter the size of the array: ";
 	std::cin >> size;
 
-	int* array = generate_array( size );
+	unsigned int* array = generate_array( size );
+	unsigned int* output = new unsigned int[ size ];
+	unsigned int* bits = new unsigned int[ size ];
 
 	print( array, size );
+
+	kernel_setup( array, output, bits, size, size, size );
+
+	print( output, size );
 
 	delete[ ] array;
 }
