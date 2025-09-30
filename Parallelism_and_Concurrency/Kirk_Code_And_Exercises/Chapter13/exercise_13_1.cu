@@ -32,24 +32,25 @@ void print( unsigned int*& array, int size ) {
 	printf( "\n" );
 }
 
-/// PROBLEM: 1. Extend the kernel in Fig. 13.4 by using shared memory to improve memory coalescing.
+/// PROBLEM: Extend the kernel in Fig. 13.4 by using shared memory to improve memory coalescing.
 
 /// ANSWER:
 
 // NOTE: I am  using the Brent-Kung Scan Algorithm here, but as an Exclusive Scan
-__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, unsigned int Section_Size, int* flags, int* scan_value, int* blockCounter ) {
+__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, unsigned int Section_Size, int* flags, int* scan_value, int blockCounter ) {
 
 	__shared__ unsigned int bid_s;
 
 	if( threadIdx.x == 0 ) {
 
-		bid_s = atomicAdd( blockCounter, 1 );
+		bid_s = atomicAdd( &blockCounter, 1 );
 	}
 
 	__syncthreads( );
 
 	unsigned int bid = bid_s;
 
+	// NOTE: shared memory entity
 	__shared__ extern unsigned int Shared_Input[ ];
 
 	unsigned int i = ( 2 * blockIdx.x * blockDim.x ) + threadIdx.x;
@@ -64,7 +65,7 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 		Shared_Input[ threadIdx.x + blockDim.x ] = bits[ i + blockDim.x ];
 	}
 
-	for( unsigned int stride = 1; stride <= blockDim.x; stride *= 2 ) {
+	for( unsigned int stride = 1; stride <= blockDim.x; stride *= 2 ){
 
 		__syncthreads( );
 
@@ -80,7 +81,7 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	// EXPLANATION: stride must be in the form of Powers of 2, but the code on the book allows for values that are not powers of 2. Thus, we pick the smallest power of 2 that is
 	//				greater than the quotient Section_Size / 4.
-	correct_rounding = static_cast< int >( pow( 2.0, ceil( log2( static_cast< double >( Section_Size ) / 4.0 ) ) ) );
+	correct_rounding = static_cast<int>( pow( 2.0, ceil( log2( static_cast<double>( Section_Size ) / 4.0 ) ) ) );
 
 	for( int stride = correct_rounding; stride > 0; stride /= 2 ) {
 
@@ -132,7 +133,7 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	__syncthreads( );
 }
 
-__global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter, int* flags, int* scan_value, int* blockCounter ) {
+__global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter, int* flags, int* scan_value, int blockCounter ) {
 
 	__shared__ extern unsigned int shared_bits[ ];
 
@@ -147,12 +148,10 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 		shared_bits[ i ] = bit;
 	}
 
-	printf( "test" );
-
 	__syncthreads( );
 
 	// Count the amount of 1's before i
-	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int ) >> > ( shared_bits, output, N, ( N / gridDim.x ), flags, scan_value, blockCounter );
+	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int )>>>( shared_bits, output, N, N, flags, scan_value, blockCounter );
 
 	if( i < N ) {
 
@@ -164,27 +163,24 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 	}
 }
 
-void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned int* host_bits, unsigned int host_N, unsigned host_iter, int size ) {
+void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned int* host_bits, unsigned int host_N, int size ) {
 
-	unsigned int* dev_input{ nullptr }, * dev_output{ nullptr }, * dev_bits{ nullptr };
-	unsigned int dev_N{ 0 }, dev_iter{ 0 };
-	int* scan_value{ 0 }, * block_counter{ 0 };
-	int* flags{ false }, * dev_flags;
+	unsigned int* dev_input{ nullptr }, *dev_output{ nullptr }, *dev_bits{ nullptr };
+	
+	int* flags{ nullptr }, *dev_flags{ nullptr };
+	int* scan_value{ nullptr };
 
+	// NOTE: block_counter is NOT AN ARRAY
+	int block_counter{ 0 };
+	
 	unsigned int array_size = size * sizeof( unsigned int );
-	unsigned int N_size = host_N * sizeof( unsigned int );
-	unsigned int iter_size = host_iter * sizeof( unsigned int );
 
 	cudaMalloc( ( void** ) &dev_input, array_size );
 	cudaMalloc( ( void** ) &dev_output, array_size );
 	cudaMalloc( ( void** ) &dev_bits, array_size ); // ATTENTION: potentially incorrect size
-	cudaMalloc( ( void** ) &dev_N, N_size );
-	cudaMalloc( ( void** ) &dev_iter, iter_size );
 
 	cudaMemcpy( dev_input, host_input, array_size, cudaMemcpyHostToDevice );
 	cudaMemcpy( dev_bits, host_bits, array_size, cudaMemcpyHostToDevice );
-	cudaMemcpy( &dev_N, &host_N, N_size, cudaMemcpyHostToDevice );
-	cudaMemcpy( &dev_iter, &host_iter, iter_size, cudaMemcpyHostToDevice );
 
 	unsigned int num_blocks{ 0 };
 	unsigned int num_threads{ 0 };
@@ -192,13 +188,15 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	std::cout << "\nEnter the number of blocks: ";
 	std::cin >> num_blocks;
 
+	cudaMalloc( ( void** ) &scan_value, num_blocks * sizeof( int ) );
+
 	std::cout << "\nEnter the number of threads: ";
 	std::cin >> num_threads;
 
-	cudaMalloc( ( void** ) &scan_value, num_blocks * sizeof( unsigned int ) );
 	cudaMalloc( ( void** ) &dev_flags, num_blocks * sizeof( int ) );
-	cudaMalloc( ( void** ) &block_counter, sizeof( int ) );
 
+	// NOTE: flags used to indicate which block to run next. If flags[ i ] != 0, for any i, it is i's turn to run.
+	//		 After i's turn, the block i sets flags[ i + 1 ] to 1, so block i + 1 can run.
 	flags = new int[ num_blocks ];
 
 	flags[ 0 ] = 1;
@@ -215,23 +213,28 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 
 	unsigned int shared_memsize{ 0 };
 
-	std::cout << "\nEnter the size of shared memory: ";
-	std::cin >> shared_memsize;
+	//std::cout << "\nEnter the size of shared memory: ";
+	//std::cin >> shared_memsize;
 
-	shared_memsize *= sizeof( unsigned int );
+	shared_memsize = host_N * sizeof( unsigned int );
 
-	radix_sort_iter<<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, dev_N, dev_iter, dev_flags, scan_value, block_counter );
+	for( auto iter = 0; iter < ( 8 * sizeof( unsigned int ) ); ++iter ){
+
+		radix_sort_iter<<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, host_N, iter, dev_flags, scan_value, block_counter );
+	}
+
+	cudaMemcpy( host_output, dev_output, array_size, cudaMemcpyDeviceToHost );
 
 	cudaFree( dev_input );
 	cudaFree( dev_output );
 	cudaFree( dev_bits );
-	cudaFree( &dev_N );
-	cudaFree( &dev_iter );
-	cudaFree( scan_value );
-	cudaFree( block_counter );
 	cudaFree( dev_flags );
+	cudaFree( scan_value );
+
+	delete[ ] flags;
 }
 
+// NOTE: Parallel Radix Sort requires calling the sorting kernel ITERATEDLY, where the amount of iterations ranges from 0 to the size in bit of each input
 int main( ) {
 
 	int size{ 0 };
@@ -245,9 +248,11 @@ int main( ) {
 
 	print( array, size );
 
-	kernel_setup( array, output, bits, size, size, size );
+	kernel_setup( array, output, bits, size, size );
+
+	std::cout << "\n";
 
 	print( output, size );
 
-	delete[ ] array;
+	delete[ ] array, output, bits;
 }
