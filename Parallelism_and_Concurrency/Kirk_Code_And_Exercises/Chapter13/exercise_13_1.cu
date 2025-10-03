@@ -150,7 +150,7 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 
 	__syncthreads( );
 
-	// Count the amount of 1's before i
+	// Counts the amount of 1's before i
 	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int )>>>( shared_bits, output, N, N, flags, scan_value, blockCounter );
 
 	if( i < N ) {
@@ -158,6 +158,8 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 		unsigned int OnesBefore = shared_bits[ i ];
 		unsigned int OnesTotal = shared_bits[ N ]; // This means that shared memory MUST have N elements
 		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore );
+
+		//printf( "%d %d ", OnesBefore, OnesTotal );
 
 		output[ dst ] = key;
 	}
