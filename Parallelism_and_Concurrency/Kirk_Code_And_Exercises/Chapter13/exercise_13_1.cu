@@ -36,9 +36,12 @@ void print( unsigned int*& array, int size ) {
 
 /// ANSWER:
 
-// NOTE: I am  using the Brent-Kung Scan Algorithm here, but as an Exclusive Scan
-__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, unsigned int Section_Size, int* flags, int* scan_value, int blockCounter ) {
+// NOTE/PROBLEM: shared memory, even in nested kernel calls, does not persist through calls. Thus, passing a shared memory array as argument to the
+//				 unsigned int* bits parameters results in bits, within exclusiveScan, being different from the shared memory array that initializes
+//				 it. I.e., bits, within exclusiveScan, != its argument.
+__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, int* flags, int* scan_value, int blockCounter ) {
 
+	// NOTE: potential cause of the problem
 	__shared__ unsigned int bid_s;
 
 	if( threadIdx.x == 0 ) {
@@ -50,69 +53,40 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	unsigned int bid = bid_s;
 
-	// NOTE: shared memory entity
-	__shared__ extern unsigned int Shared_Input[ ];
+	// NOTE: potential cause of the problem
+	__shared__ extern unsigned int SharedMem[ ];
 
-	unsigned int i = ( 2 * blockIdx.x * blockDim.x ) + threadIdx.x;
+	unsigned int i = ( blockDim.x * blockIdx.x ) + threadIdx.x;
 
-	if( ( i < N ) && ( threadIdx.x != 0 ) ) {
+	SharedMem[ threadIdx.x ] = ( ( i < N ) && ( threadIdx.x != 0 ) ) ? bits[ i - 1 ] : 0;
 
-		Shared_Input[ threadIdx.x ] = bits[ i - 1 ];
-	}
-
-	if( ( i + blockDim.x ) < N ) {
-
-		Shared_Input[ threadIdx.x + blockDim.x ] = bits[ i + blockDim.x ];
-	}
-
-	for( unsigned int stride = 1; stride <= blockDim.x; stride *= 2 ){
+	for( unsigned int stride = 1; stride < blockDim.x; stride *= 2 ){
 
 		__syncthreads( );
 
-		unsigned int index = ( ( threadIdx.x + 1 ) * 2 * stride ) - 1;
+		double temp{ };
 
-		if( index < Section_Size ) {
+		if( threadIdx.x >= stride ){
 
-			Shared_Input[ index ] += Shared_Input[ index - stride ];
+			temp = SharedMem[ threadIdx.x ] + SharedMem[ threadIdx.x - stride ];
 		}
-	}
-
-	int correct_rounding{ 0 };
-
-	// EXPLANATION: stride must be in the form of Powers of 2, but the code on the book allows for values that are not powers of 2. Thus, we pick the smallest power of 2 that is
-	//				greater than the quotient Section_Size / 4.
-	correct_rounding = static_cast<int>( pow( 2.0, ceil( log2( static_cast<double>( Section_Size ) / 4.0 ) ) ) );
-
-	for( int stride = correct_rounding; stride > 0; stride /= 2 ) {
 
 		__syncthreads( );
 
-		unsigned int index = ( ( threadIdx.x + 1 ) * stride * 2 ) - 1;
+		if( threadIdx.x >= stride ){
 
-		if( ( index + stride ) < Section_Size ) {
-
-			Shared_Input[ index + stride ] += Shared_Input[ index ];
+			SharedMem[ threadIdx.x ] = temp;
 		}
 	}
 
-	__syncthreads( );
+	if( i < N ){
 
-	if( i < N ) {
-
-		unsigned int holder = Shared_Input[ threadIdx.x ];
-
-		output[ i ] = holder;
-	}
-
-	if( ( i + blockDim.x ) < N ) {
-
-		unsigned int holder = Shared_Input[ threadIdx.x + blockDim.x ];
-
-		output[ i + blockDim.x ] = holder;
+		output[ i ] = SharedMem[ threadIdx.x ];
 	}
 
 	// Block Synchronization
 
+	// NOTE: potential cause of the problem
 	__shared__ unsigned int previous_sum;
 
 	if( threadIdx.x == 0 ) {
@@ -135,8 +109,6 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter, int* flags, int* scan_value, int blockCounter ) {
 
-	__shared__ extern unsigned int shared_bits[ ];
-
 	unsigned int i = ( blockIdx.x * blockDim.x ) + threadIdx.x;
 
 	unsigned int key{ 0 }, bit{ 0 };
@@ -145,18 +117,20 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 
 		key = input[ i ];
 		bit = ( key >> iter ) & 1;
-		shared_bits[ i ] = bit;
+		bits[ i ] = bit;
+
+		//printf( "%d ", bits[ i ] );
 	}
 
 	__syncthreads( );
 
 	// Counts the amount of 1's before i
-	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int )>>>( shared_bits, output, N, N, flags, scan_value, blockCounter );
+	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int )>>>( bits, output, N, flags, scan_value, blockCounter );
 
 	if( i < N ) {
 
-		unsigned int OnesBefore = shared_bits[ i ];
-		unsigned int OnesTotal = shared_bits[ N ]; // This means that shared memory MUST have N elements
+		unsigned int OnesBefore = bits[ i ];
+		unsigned int OnesTotal = bits[ N ]; // This means that shared memory MUST have N elements
 		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore );
 
 		//printf( "%d %d ", OnesBefore, OnesTotal );
@@ -165,7 +139,7 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 	}
 }
 
-void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned int* host_bits, unsigned int host_N, int size ) {
+void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned int* host_bits, unsigned int host_N ) {
 
 	unsigned int* dev_input{ nullptr }, *dev_output{ nullptr }, *dev_bits{ nullptr };
 	
@@ -175,14 +149,13 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	// NOTE: block_counter is NOT AN ARRAY
 	int block_counter{ 0 };
 	
-	unsigned int array_size = size * sizeof( unsigned int );
+	unsigned int array_size = host_N * sizeof( unsigned int );
 
 	cudaMalloc( ( void** ) &dev_input, array_size );
 	cudaMalloc( ( void** ) &dev_output, array_size );
 	cudaMalloc( ( void** ) &dev_bits, array_size ); // ATTENTION: potentially incorrect size
 
 	cudaMemcpy( dev_input, host_input, array_size, cudaMemcpyHostToDevice );
-	cudaMemcpy( dev_bits, host_bits, array_size, cudaMemcpyHostToDevice );
 
 	unsigned int num_blocks{ 0 };
 	unsigned int num_threads{ 0 };
@@ -222,6 +195,7 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 
 	for( auto iter = 0; iter < ( 8 * sizeof( unsigned int ) ); ++iter ){
 
+		// NOTE: potential cause of the problem shared_memsize might be incorrect
 		radix_sort_iter<<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, host_N, iter, dev_flags, scan_value, block_counter );
 	}
 
@@ -250,7 +224,7 @@ int main( ) {
 
 	print( array, size );
 
-	kernel_setup( array, output, bits, size, size );
+	kernel_setup( array, output, bits, size );
 
 	std::cout << "\n";
 
