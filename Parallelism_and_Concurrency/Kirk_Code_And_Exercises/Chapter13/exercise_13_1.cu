@@ -58,13 +58,17 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	unsigned int i = ( blockDim.x * blockIdx.x ) + threadIdx.x;
 
+	// NOTE: since we are adding up bits, we default to 0 if the following condition is not met, because
+	//		 0 is the addition identity
 	SharedMem[ threadIdx.x ] = ( ( i < N ) && ( threadIdx.x != 0 ) ) ? bits[ i - 1 ] : 0;
 
+	// NOTE: what the hell is this adding up? We should not add up bits, we should count them.
+				// No, we are actually adding them.
 	for( unsigned int stride = 1; stride < blockDim.x; stride *= 2 ){
 
 		__syncthreads( );
 
-		double temp{ };
+		unsigned int temp{ };
 
 		if( threadIdx.x >= stride ){
 
@@ -81,7 +85,10 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	if( i < N ){
 
-		output[ i ] = SharedMem[ threadIdx.x ];
+		// NOTE: substituted output[] for bits[]
+		// PROBLEM: data-race. If thread 1 modifies bits before thread 2, shit happens
+		//			may atomic add?
+		bits[ i ] = SharedMem[ threadIdx.x ];
 	}
 
 	// Block Synchronization
@@ -96,8 +103,8 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 		previous_sum = scan_value[ bid ];
 
-		// TODO: what the fuck is local_sum
-		scan_value[ bid + 1 ] = previous_sum + output[ i + blockDim.x ];
+		// NOTE: substituted output[] for bits[]
+		scan_value[ bid + 1 ] = previous_sum + bits[ i + blockDim.x ];
 
 		__threadfence( );
 
@@ -125,12 +132,13 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 	__syncthreads( );
 
 	// Counts the amount of 1's before i
+	// PROBLEM: exclusiveScan is NOT counting the amount of 0/1 before the ith position
 	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int )>>>( bits, output, N, flags, scan_value, blockCounter );
 
 	if( i < N ) {
 
 		unsigned int OnesBefore = bits[ i ];
-		unsigned int OnesTotal = bits[ N ]; // This means that shared memory MUST have N elements
+		unsigned int OnesTotal = bits[ N - 1 ]; // This means that bits MUST have N elements
 		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore );
 
 		//printf( "%d %d ", OnesBefore, OnesTotal );
