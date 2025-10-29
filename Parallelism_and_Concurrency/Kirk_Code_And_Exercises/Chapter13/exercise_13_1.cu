@@ -26,7 +26,9 @@ void print( unsigned int*& array, int size ) {
 
 	for( auto i = 0; i < size; ++i ) {
 
-		std::cout << std::bitset<32>( array[ i ] ) << " ";
+		//std::cout << std::bitset<32>( array[ i ] ) << " ";
+
+		printf( "%d ", array[ i ] );
 	}
 
 	printf( "\n" );
@@ -54,6 +56,7 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	unsigned int bid = bid_s;
 
 	// NOTE: potential cause of the problem
+	// NOTE: SharedMem has size equal to blockDim.x, i.e., it only stores the partial sum of each block
 	__shared__ extern unsigned int SharedMem[ ];
 
 	unsigned int i = ( blockDim.x * blockIdx.x ) + threadIdx.x;
@@ -61,6 +64,10 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	// NOTE: since we are adding up bits, we default to 0 if the following condition is not met, because
 	//		 0 is the addition identity
 	SharedMem[ threadIdx.x ] = ( ( i < N ) && ( threadIdx.x != 0 ) ) ? bits[ i - 1 ] : 0;
+
+	__syncthreads( );
+
+	//printf( "%d ", SharedMem[ threadIdx.x ] );
 
 	// NOTE: what the hell is this adding up? We should not add up bits, we should count them.
 				// No, we are actually adding them.
@@ -72,6 +79,9 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 		if( threadIdx.x >= stride ){
 
+			// NOTE: using threadIdx.x as an index might be WRONG
+			//		 hmmmmm, I do not think so. SharedMem is block-local, and its size equals the size of the block,
+			//		 thus, threadIdx.x is always within range
 			temp = SharedMem[ threadIdx.x ] + SharedMem[ threadIdx.x - stride ];
 		}
 
@@ -79,16 +89,17 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 		if( threadIdx.x >= stride ){
 
+			// NOTE: using threadIdx.x as an index might be WRONG
 			SharedMem[ threadIdx.x ] = temp;
 		}
 	}
 
-	if( i < N ){
+	__syncthreads( );
 
-		// NOTE: substituted output[] for bits[]
-		// PROBLEM: data-race. If thread 1 modifies bits before thread 2, shit happens
-		//			may atomic add?
-		bits[ i ] = SharedMem[ threadIdx.x ];
+	if( threadIdx.x == 0 ){
+		
+		// NOTE: scan_value has gridDim.x elements, thus bid is always in the correct range
+		scan_value[ bid ] = SharedMem[ blockDim.x - 1 ];
 	}
 
 	// Block Synchronization
@@ -101,6 +112,7 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 		// bid = blockId
 		while( atomicAdd( &flags[ bid ], 0 ) == 0 ) { }
 
+		// PROBLEM: where the FUCK was scan_value previously initialized for this to even make sense?
 		previous_sum = scan_value[ bid ];
 
 		// NOTE: substituted output[] for bits[]
@@ -114,6 +126,12 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	__syncthreads( );
 }
 
+// SOLUTION DESCRIPTION:
+//							for an input of size N, assign ( N / BLOCKS ) elements from the input to each block
+//							assign each element from the block-subset to a thread in the block
+//							each thread must extract the LSB from their corresponding element
+//								each thread must store their bit into the bits array in the global memory
+//							perform an exclusive scan over the bits array, count the amount of 1's in the array
 __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter, int* flags, int* scan_value, int blockCounter ) {
 
 	unsigned int i = ( blockIdx.x * blockDim.x ) + threadIdx.x;
