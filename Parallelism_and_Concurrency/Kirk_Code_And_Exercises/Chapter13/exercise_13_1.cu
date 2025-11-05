@@ -38,10 +38,12 @@ void print( unsigned int*& array, int size ) {
 
 /// ANSWER:
 
+/// TODO: USE DEBUGGER!!!!!!!!!!!!!!!!!!!!!!!!!
+
 // NOTE/PROBLEM: shared memory, even in nested kernel calls, does not persist through calls. Thus, passing a shared memory array as argument to the
 //				 unsigned int* bits parameters results in bits, within exclusiveScan, being different from the shared memory array that initializes
 //				 it. I.e., bits, within exclusiveScan, != its argument.
-__global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, int* flags, int* scan_value, int blockCounter ) {
+__device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, int* flags, int* scan_value, int blockCounter ) {
 
 	// NOTE: potential cause of the problem
 	__shared__ unsigned int bid_s;
@@ -63,6 +65,8 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	// NOTE: since we are adding up bits, we default to 0 if the following condition is not met, because
 	//		 0 is the addition identity
+	// PROBLEM: let bits = [ 0, 0, 1, 1 ]. SharedMem should be SharedMem = [ 0, 1, 1, 0 ], but it is
+	//			SharedMem = [ 0, 0, 0, 1 ] instead. This is WRONG
 	SharedMem[ threadIdx.x ] = ( ( i < N ) && ( threadIdx.x != 0 ) ) ? bits[ i - 1 ] : 0;
 
 	__syncthreads( );
@@ -70,7 +74,7 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	//printf( "%d ", SharedMem[ threadIdx.x ] );
 
 	// NOTE: what the hell is this adding up? We should not add up bits, we should count them.
-				// No, we are actually adding them.
+	//		 No, we are actually adding them.
 	for( unsigned int stride = 1; stride < blockDim.x; stride *= 2 ){
 
 		__syncthreads( );
@@ -106,6 +110,11 @@ __global__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	// NOTE: potential cause of the problem
 	__shared__ unsigned int previous_sum;
+
+	/*if( i == 0 && threadIdx.x == 0 ){
+
+		printf( "%#010x, %#010x, %#010x\n", &bid_s, &SharedMem, &previous_sum );
+	}*/
 
 	if( threadIdx.x == 0 ) {
 
@@ -151,9 +160,15 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 
 	// Counts the amount of 1's before i
 	// PROBLEM: exclusiveScan is NOT counting the amount of 0/1 before the ith position
-	exclusiveScan<<<gridDim.x, blockDim.x, blockDim.x * sizeof( unsigned int )>>>( bits, output, N, flags, scan_value, blockCounter );
+	// PROBLEM: I think that grid-synchronization is messing up with i = ( blockDim.x * blockId.x ) + threadIdx.x!!! -> WRONG. Following comment is right!
+	//			Or... each thread calls exclusiveScan. EACH call launches a grid with gridDim blocks, each with blockDim threads.
+	//			This dynamic parallelism is fucking things up. <- This is right!
+	// NOTE: even though __device__ takes no execution configuration parameters, the argument passed to the call to radix_sort_iter
+	//		 is also passed to whatever calls extern within exclusiveScan
+	//		 Or not... I removed it and the code still worked. Weird. Try to figure out why.
+	exclusiveScan( bits, output, N, flags, scan_value, blockCounter );
 
-	if( i < N ) {
+	if( i < N ){
 
 		unsigned int OnesBefore = bits[ i ];
 		unsigned int OnesTotal = bits[ N - 1 ]; // This means that bits MUST have N elements
@@ -217,7 +232,7 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	//std::cout << "\nEnter the size of shared memory: ";
 	//std::cin >> shared_memsize;
 
-	shared_memsize = host_N * sizeof( unsigned int );
+	shared_memsize = num_threads * sizeof( unsigned int );
 
 	for( auto iter = 0; iter < ( 8 * sizeof( unsigned int ) ); ++iter ){
 
