@@ -66,7 +66,8 @@ __device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	// NOTE: since we are adding up bits, we default to 0 if the following condition is not met, because
 	//		 0 is the addition identity
 	// PROBLEM: let bits = [ 0, 0, 1, 1 ]. SharedMem should be SharedMem = [ 0, 1, 1, 0 ], but it is
-	//			SharedMem = [ 0, 0, 0, 1 ] instead. This is WRONG
+	//			SharedMem = [ 0, 0, 0, 1 ] instead. This is WRONG -> No, the correct output must be
+	//			[ 0, 0, 0, 1 ]. This is right.
 	SharedMem[ threadIdx.x ] = ( ( i < N ) && ( threadIdx.x != 0 ) ) ? bits[ i - 1 ] : 0;
 
 	__syncthreads( );
@@ -149,14 +150,23 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 
 	if( i < N ) {
 
-		key = input[ i ];
-		bit = ( key >> iter ) & 1;
+		key = input[ i ]; // NOTE: since the algorithm is iterated on, at the end of each iteration, should we let input = output?
+						  // PROBLEM: key value is NOT changing.
+		bit = ( key >> iter ) & 1; // NOTE: maybe the problem is here?
 		bits[ i ] = bit;
-
-		//printf( "%d ", bits[ i ] );
 	}
 
 	__syncthreads( );
+
+	if( i == 0 ){
+
+		for( auto i = 0; i < N; ++i ){
+
+			printf( "%d ", bits[ i ] );
+		}
+
+		printf( "\n" );
+	}
 
 	// Counts the amount of 1's before i
 	// PROBLEM: exclusiveScan is NOT counting the amount of 0/1 before the ith position
@@ -168,15 +178,31 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 	//		 Or not... I removed it and the code still worked. Weird. Try to figure out why.
 	exclusiveScan( bits, output, N, flags, scan_value, blockCounter );
 
+	// PROBLEM: something in this block is wrong
 	if( i < N ){
 
 		unsigned int OnesBefore = bits[ i ];
-		unsigned int OnesTotal = bits[ N - 1 ]; // This means that bits MUST have N elements
+		unsigned int OnesTotal = bits[ N ]; // This means that bits MUST have N elements
 		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore );
 
-		//printf( "%d %d ", OnesBefore, OnesTotal );
-
 		output[ dst ] = key;
+	}
+
+	/*if( i == 0 ){
+
+		for( auto i = 0; i < N; ++i ){
+
+			printf( "%d ", output[ i ] );
+		}
+
+		printf( "\n" );
+	}*/
+
+	// NOTE: after exclusiveScan runs, all flags are set to 1. Thus, on the next call of radix_sort_iter, block-sync is broken.
+	//		 To fix that, at the end of radix_sort_it, flags must be reset to default.
+	if( ( i + 1 ) % gridDim.x == 0 ){
+
+		flags[ blockIdx.x ] = ( blockIdx.x != 0 ) ? ( 0 ) : ( 1 );
 	}
 }
 
@@ -238,6 +264,8 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 
 		// NOTE: potential cause of the problem shared_memsize might be incorrect
 		radix_sort_iter<<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, host_N, iter, dev_flags, scan_value, block_counter );
+		
+		cudaMemcpy( dev_input, dev_output, array_size, cudaMemcpyDeviceToDevice );
 	}
 
 	cudaMemcpy( host_output, dev_output, array_size, cudaMemcpyDeviceToHost );
@@ -266,6 +294,15 @@ int main( ) {
 	print( array, size );
 
 	kernel_setup( array, output, bits, size );
+
+	/*std::cout << std::bitset<32>( array[ 0 ] ) << "\n";
+
+	for( auto i = 0; i < ( 8 * sizeof( unsigned int ) ); ++i ){
+
+		unsigned int bit = ( array[ 0 ] >> i ) & 1;
+
+		std::cout << bit;
+	}*/
 
 	std::cout << "\n";
 
