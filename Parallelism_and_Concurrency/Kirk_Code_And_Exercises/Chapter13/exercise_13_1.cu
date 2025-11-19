@@ -61,6 +61,7 @@ __device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	// NOTE: SharedMem has size equal to blockDim.x, i.e., it only stores the partial sum of each block
 	__shared__ extern unsigned int SharedMem[ ];
 
+	// NOTE: maybe use bid instead of blockIdx.x, since this kernel syncs blocks
 	unsigned int i = ( blockDim.x * blockIdx.x ) + threadIdx.x;
 
 	// NOTE: since we are adding up bits, we default to 0 if the following condition is not met, because
@@ -123,6 +124,7 @@ __device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 		while( atomicAdd( &flags[ bid ], 0 ) == 0 ) { }
 
 		// PROBLEM: where the FUCK was scan_value previously initialized for this to even make sense?
+		// PROBLEM: scan_value has less elements than bits. How do I fix that?
 		previous_sum = scan_value[ bid ];
 
 		// NOTE: substituted output[] for bits[]
@@ -146,6 +148,16 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 
 	unsigned int i = ( blockIdx.x * blockDim.x ) + threadIdx.x;
 
+	/*if( i == 0 ){
+
+		for( auto i = 0; i < N; ++i ){
+
+			printf( "%d ", input[ i ] );
+		}
+
+		printf( "\n" );
+	}*/
+
 	unsigned int key{ 0 }, bit{ 0 };
 
 	if( i < N ) {
@@ -158,7 +170,7 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 
 	__syncthreads( );
 
-	if( i == 0 ){
+	/*if( i == 0 ){
 
 		for( auto i = 0; i < N; ++i ){
 
@@ -166,7 +178,7 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 		}
 
 		printf( "\n" );
-	}
+	}*/
 
 	// Counts the amount of 1's before i
 	// PROBLEM: exclusiveScan is NOT counting the amount of 0/1 before the ith position
@@ -179,16 +191,18 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 	exclusiveScan( bits, output, N, flags, scan_value, blockCounter );
 
 	// PROBLEM: something in this block is wrong
+	//			Why am I not using scan_value at all here?
+	//			I cannot use scan_value in here because i > size of scan_value
 	if( i < N ){
 
-		unsigned int OnesBefore = bits[ i ];
-		unsigned int OnesTotal = bits[ N ]; // This means that bits MUST have N elements
-		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore );
+		unsigned int OnesBefore = scan_value[ i ];
+		unsigned int OnesTotal = scan_value[ N - 1 ]; // This means that bits MUST have N elements
+		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore - 1 ); // NOTE: maybe N - OnesTotal - OnesBefore - 1
 
 		output[ dst ] = key;
 	}
 
-	/*if( i == 0 ){
+	if( i == 0 ){
 
 		for( auto i = 0; i < N; ++i ){
 
@@ -196,7 +210,7 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 		}
 
 		printf( "\n" );
-	}*/
+	}
 
 	// NOTE: after exclusiveScan runs, all flags are set to 1. Thus, on the next call of radix_sort_iter, block-sync is broken.
 	//		 To fix that, at the end of radix_sort_it, flags must be reset to default.
@@ -262,10 +276,12 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 
 	for( auto iter = 0; iter < ( 8 * sizeof( unsigned int ) ); ++iter ){
 
-		// NOTE: potential cause of the problem shared_memsize might be incorrect
+		// NOTE: potential cause of the problem shared_memsize might be incorrect <- shared_memsize is ok
+		//		 The problem is: how to correctly let dev_input = dev_output after kernel call
 		radix_sort_iter<<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, host_N, iter, dev_flags, scan_value, block_counter );
 		
 		cudaMemcpy( dev_input, dev_output, array_size, cudaMemcpyDeviceToDevice );
+		//dev_input = dev_output;
 	}
 
 	cudaMemcpy( host_output, dev_output, array_size, cudaMemcpyDeviceToHost );
