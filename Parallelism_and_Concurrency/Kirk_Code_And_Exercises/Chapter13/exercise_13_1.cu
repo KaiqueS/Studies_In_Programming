@@ -43,26 +43,31 @@ void print( unsigned int*& array, int size ) {
 // NOTE/PROBLEM: shared memory, even in nested kernel calls, does not persist through calls. Thus, passing a shared memory array as argument to the
 //				 unsigned int* bits parameters results in bits, within exclusiveScan, being different from the shared memory array that initializes
 //				 it. I.e., bits, within exclusiveScan, != its argument.
-__device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, int* flags, int* scan_value, int blockCounter ) {
+__device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigned int N, int* flags, int* scan_value, int* blockCounter ) {
+
+	// NOTE: potential cause of the problem
+	// NOTE: SharedMem has size equal to blockDim.x, i.e., it only stores the partial sum of each block
+	__shared__ extern unsigned int SharedMem[ ];
 
 	// NOTE: potential cause of the problem
 	__shared__ unsigned int bid_s;
 
 	if( threadIdx.x == 0 ) {
 
-		bid_s = atomicAdd( &blockCounter, 1 );
+		bid_s = atomicAdd( blockCounter, 1 );
 	}
 
 	__syncthreads( );
 
 	unsigned int bid = bid_s;
 
-	// NOTE: potential cause of the problem
-	// NOTE: SharedMem has size equal to blockDim.x, i.e., it only stores the partial sum of each block
-	__shared__ extern unsigned int SharedMem[ ];
-
 	// NOTE: maybe use bid instead of blockIdx.x, since this kernel syncs blocks
-	unsigned int i = ( blockDim.x * blockIdx.x ) + threadIdx.x;
+	unsigned int i = ( blockDim.x * bid ) + threadIdx.x;
+
+	if( threadIdx.x == 0 ) {
+
+		printf( "bid_s: %d ", bid );
+	}
 
 	// NOTE: since we are adding up bits, we default to 0 if the following condition is not met, because
 	//		 0 is the addition identity
@@ -105,6 +110,7 @@ __device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	if( threadIdx.x == 0 ){
 		
 		// NOTE: scan_value has gridDim.x elements, thus bid is always in the correct range
+		// NOTE: I could increase the size of scan_value up to array_size and let scan_value = SharedMem
 		scan_value[ bid ] = SharedMem[ blockDim.x - 1 ];
 	}
 
@@ -120,7 +126,7 @@ __device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 
 	if( threadIdx.x == 0 ) {
 
-		// bid = blockId
+		// bid = dynamic blockId. This while spinlocks the blocks, releasing then in order First-Come, First-Serve
 		while( atomicAdd( &flags[ bid ], 0 ) == 0 ) { }
 
 		// PROBLEM: where the FUCK was scan_value previously initialized for this to even make sense?
@@ -136,6 +142,31 @@ __device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 	}
 
 	__syncthreads( );
+
+	// NOTE: Now, I need to take values from scan_value and let each thread from blocks != 0 add to their corresponding
+	//		 bits[ ] entries. I.e., I need to broadcast the values from scan_value to their corresponding blocks
+
+	/*if( i == 0 ){
+
+		printf( "\n" );
+
+		for( auto index = 0; index < blockDim.x; ++index ){
+
+			printf( "%d ", scan_value[ index ] );
+		}
+
+		printf( "\n" );
+	}*/
+
+	if( bid != 0 ){
+
+		bits[ i ] += scan_value[ bid - 1 ];
+	}
+
+	else{
+
+		bits[ i ] = SharedMem[ threadIdx.x ];
+	}
 }
 
 // SOLUTION DESCRIPTION:
@@ -144,7 +175,7 @@ __device__ void exclusiveScan( unsigned int* bits, unsigned int* output, unsigne
 //							each thread must extract the LSB from their corresponding element
 //								each thread must store their bit into the bits array in the global memory
 //							perform an exclusive scan over the bits array, count the amount of 1's in the array
-__global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter, int* flags, int* scan_value, int blockCounter ) {
+__global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsigned int* bits, unsigned int N, unsigned int iter, int* flags, int* scan_value, int* blockCounter ) {
 
 	unsigned int i = ( blockIdx.x * blockDim.x ) + threadIdx.x;
 
@@ -193,16 +224,29 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 	// PROBLEM: something in this block is wrong
 	//			Why am I not using scan_value at all here?
 	//			I cannot use scan_value in here because i > size of scan_value
+
+	/*if( i == 0 ){
+
+		printf( "\n" );
+
+		for( auto index = 0; index < N; ++index ){
+
+			printf( "%d ", bits[ index ] );
+		}
+
+		printf( "\n" );
+	}*/
+
 	if( i < N ){
 
-		unsigned int OnesBefore = scan_value[ i ];
-		unsigned int OnesTotal = scan_value[ N - 1 ]; // This means that bits MUST have N elements
+		unsigned int OnesBefore = bits[ i ]; // NOTE: instead of bits[], I used scan_value on previous attempts
+		unsigned int OnesTotal = bits[ N - 1 ]; // This means that bits MUST have N elements
 		unsigned int dst = ( bit == 0 ) ? ( i - OnesBefore ) : ( N - OnesTotal - OnesBefore - 1 ); // NOTE: maybe N - OnesTotal - OnesBefore - 1
 
 		output[ dst ] = key;
 	}
 
-	if( i == 0 ){
+	/*if( i == 0 ){
 
 		for( auto i = 0; i < N; ++i ){
 
@@ -210,7 +254,7 @@ __global__ void radix_sort_iter( unsigned int* input, unsigned int* output, unsi
 		}
 
 		printf( "\n" );
-	}
+	}*/
 
 	// NOTE: after exclusiveScan runs, all flags are set to 1. Thus, on the next call of radix_sort_iter, block-sync is broken.
 	//		 To fix that, at the end of radix_sort_it, flags must be reset to default.
@@ -228,13 +272,14 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 	int* scan_value{ nullptr };
 
 	// NOTE: block_counter is NOT AN ARRAY
-	int block_counter{ 0 };
+	int* block_counter{ nullptr };
 	
 	unsigned int array_size = host_N * sizeof( unsigned int );
 
 	cudaMalloc( ( void** ) &dev_input, array_size );
 	cudaMalloc( ( void** ) &dev_output, array_size );
 	cudaMalloc( ( void** ) &dev_bits, array_size ); // ATTENTION: potentially incorrect size
+	cudaMalloc( ( void** ) &block_counter, 1 * sizeof( int ) );
 
 	cudaMemcpy( dev_input, host_input, array_size, cudaMemcpyHostToDevice );
 
@@ -246,6 +291,8 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 
 	cudaMalloc( ( void** ) &scan_value, num_blocks * sizeof( int ) );
 
+	// NOTE: I think that, so as to generalize the code, I should let num_threads = host_input / num_blocks.
+	//		 If num_threads > max( max_threads_on_device ), then I should switch to coarsening.
 	std::cout << "\nEnter the number of threads: ";
 	std::cin >> num_threads;
 
@@ -262,6 +309,7 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 		flags[ i ] = 0;
 	}
 
+	cudaMemcpy( block_counter, int{ 0 }, 1 * sizeof( int ), cudaMemcpyHostToDevice );
 	cudaMemcpy( dev_flags, flags, num_blocks * sizeof( int ), cudaMemcpyHostToDevice );
 
 	dim3 blocks{ num_blocks };
@@ -279,8 +327,11 @@ void kernel_setup( unsigned int* host_input, unsigned int* host_output, unsigned
 		// NOTE: potential cause of the problem shared_memsize might be incorrect <- shared_memsize is ok
 		//		 The problem is: how to correctly let dev_input = dev_output after kernel call
 		radix_sort_iter<<<blocks, threads, shared_memsize>>>( dev_input, dev_output, dev_bits, host_N, iter, dev_flags, scan_value, block_counter );
-		
+
 		cudaMemcpy( dev_input, dev_output, array_size, cudaMemcpyDeviceToDevice );
+
+		// NOTE: I must reset block_counter after radix_sort_iter ends
+
 		//dev_input = dev_output;
 	}
 
