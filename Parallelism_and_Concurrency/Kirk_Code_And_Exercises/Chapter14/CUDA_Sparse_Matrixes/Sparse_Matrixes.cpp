@@ -69,11 +69,82 @@ void COO::insert_element( int row, int col, int element ){
 	value.push_back( element );
 }
 
+void COO::reorder( int left_index, int right_index ){
+
+	std::swap( rowIdx[ left_index ], rowIdx[ right_index ] );
+	std::swap( colIdx[ left_index ], colIdx[ right_index ] );
+	std::swap( value[ left_index ], value[ right_index ] );
+}
+
 /// END - COO
 
 // ------------------
 
 /// CSR - BEGIN
+
+int CSR::count_Zeroes( int**& matrix, int rowSize, int colSize ){
+
+	int counter{ 0 };
+
+	for( auto i = 0; i < rowSize; ++i ){
+
+		for( auto j = 0; j < colSize; ++j ){
+
+			if( matrix[ i ][ j ] == 0 ){
+
+				++counter;
+			}
+
+			else{
+
+				continue;
+			}
+		}
+	}
+
+	return counter;
+}
+
+// NOTE: COO arrays are unidimensional
+void CSR::allocate_CSR( int**&matrix, int rowSize, int colSize ){
+
+	int zeroes{ count_Zeroes( matrix, rowSize, colSize ) };
+
+	rowPtrs.reserve( rowSize );
+	colIdx.reserve( ( rowSize * colSize ) - zeroes );
+	value.reserve( ( rowSize * colSize ) - zeroes );
+}
+
+void CSR::build_CSR( int**& matrix, int rowSize, int colSize ){
+
+	allocate_CSR( matrix, rowSize, colSize );
+
+	int zeroes{ 0 };
+
+	rowPtrs.push_back( 0 );
+
+	for( auto i = 0; i < rowSize; ++i ){
+
+		for( auto j = 0; j < colSize; ++j ){
+
+			// NOTE: any time we hit a 0, we use zeroes to put matrix[ i ][ j ] into the correct position in value, rowIdx, and colIdx
+			if( matrix[ i ][ j ] != 0 ){
+
+				value.push_back( matrix[ i ][ j ] );
+				colIdx.push_back( j );
+			}
+			
+			// NOTE: If we hit a 0 in matrix, we increment the offset zeroes
+			else{
+
+				continue;
+			}
+		}
+
+		// NOTE: this means that, if rowPtrs[ x ] == rowPtrs[ x + 1 ], then row x has no nonzero elements
+		rowPtrs.push_back( value.size( ) );
+	}
+}
 
 
 /// END - CSR
