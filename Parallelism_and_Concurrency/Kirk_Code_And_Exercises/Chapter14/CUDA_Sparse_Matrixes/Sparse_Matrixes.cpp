@@ -146,14 +146,87 @@ void CSR::build_CSR( int**& matrix, int rowSize, int colSize ){
 	}
 }
 
-
 /// END - CSR
 
 // ------------------
 
 /// ELL - BEGIN
 
+std::vector<std::vector<int>> ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
+
+	std::vector<std::vector<int>> nonzeroes{ };
+
+	for( auto i = 0; i < rowsize; ++i ){
+
+		std::vector<int> row{ };
+
+		for( auto j = 0; j < colsize; ++j ){
+
+			if( matrix[ i ][ j ] != 0 ){
+
+				row.push_back( matrix[ i ][ j ] );
+			}
+
+			else{
+
+				continue;
+			}
+		}
+
+		nonzeroes.push_back( row );
+	}
+
+	return nonzeroes;
+}
+
+std::vector<std::vector<int>> ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
+
+	std::vector<std::vector<int>> padded_mtx{ };
+	std::vector<std::vector<int>> nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
+
+	int max_rowsize = std::max( nonzeroes.begin( ), nonzeroes.end( ) ) -> size( );
+
+	for( auto i = 0; i < nonzeroes.size( ); ++i ){
+
+		if( nonzeroes[ i ].size( ) < max_rowsize ){
+
+			std::vector<int> holder( max_rowsize, 0 );
+			std::copy( std::begin( nonzeroes[ i ] ), std::end( nonzeroes[ i ] ), std::begin( holder ) );
+			//std::fill( ( holder.begin() + nonzeroes[ i ].size( ) ), holder.end( ), 0 );
+			
+		}
+
+		else{
+
+			padded_mtx.push_back( nonzeroes[ i ] );
+		}
+	}
+
+	return padded_mtx;
+}
+
+void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
+
+	std::vector<std::vector<int>> padded_matrix = nonzero_matrix( matrix, rowsize, colsize );
+
+	for( auto col = 0; col < colsize; ++col ){
+
+		for( auto row = 0; row < rowsize; ++row ){
+		
+			colIdx.push_back( col );
+			value.push_back( padded_matrix[ row ][ col ] );
+		}
+	}
+}
 
 /// END - ELL
+
+// ------------------
+
+/// JDS - BEGIN
+
+
+
+/// END - JDS
 
 // ------------------

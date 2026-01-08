@@ -57,16 +57,24 @@ class ELL{
 
 public:
 
+	ELL( ){ }
+	~ELL( ){ colIdx.clear( ); value.clear( ); }
+
+	void build_ELL( int**& matrix, int rowsize, int colsize );
+
+	std::vector<std::vector<int>> nonzero_matrix( int**& matrix, int rowsize, int colsize );
+	std::vector<std::vector<int>> padded_matrix( int**& matrix, int rowsize, int colsize );
 
 private:
 
-
+	std::vector<int> colIdx{ };
+	std::vector<int> value{ };
 };
 
 class JDS{
 
 public:
-
+	
 
 private:
 
