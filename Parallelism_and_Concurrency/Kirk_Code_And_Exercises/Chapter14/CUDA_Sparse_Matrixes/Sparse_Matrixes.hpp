@@ -65,6 +65,9 @@ public:
 	std::vector<std::vector<int>> nonzero_matrix( int**& matrix, int rowsize, int colsize );
 	std::vector<std::vector<int>> padded_matrix( int**& matrix, int rowsize, int colsize );
 
+	const std::vector<int>& get_colIdx( ) const{ return colIdx; }
+	const std::vector<int>& get_value( ) const{ return value; }
+
 private:
 
 	std::vector<int> colIdx{ };
@@ -75,8 +78,12 @@ class JDS{
 
 public:
 	
+	JDS( ){ }
+	~JDS( ){ iterPtr.clear( ); colIdx.clear( ); value.clear( ); }
 
 private:
 
-
+	std::vector<int> iterPtr{ };
+	std::vector<int> colIdx{ };
+	std::vector<int> value{ };
 };

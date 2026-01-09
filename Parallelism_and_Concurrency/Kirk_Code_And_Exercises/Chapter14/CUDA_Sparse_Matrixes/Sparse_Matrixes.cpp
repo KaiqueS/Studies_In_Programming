@@ -184,7 +184,20 @@ std::vector<std::vector<int>> ELL::padded_matrix( int**& matrix, int rowsize, in
 	std::vector<std::vector<int>> padded_mtx{ };
 	std::vector<std::vector<int>> nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 
-	int max_rowsize = std::max( nonzeroes.begin( ), nonzeroes.end( ) ) -> size( );
+	int max_rowsize{ 0 };
+
+	for( auto i = 0; i < nonzeroes.size( ); ++i ){
+
+		if( nonzeroes[ i ].size( ) > max_rowsize ){
+
+			max_rowsize = nonzeroes[ i ].size( );
+		}
+
+		else{
+
+			continue;
+		}
+	}
 
 	for( auto i = 0; i < nonzeroes.size( ); ++i ){
 
@@ -192,8 +205,9 @@ std::vector<std::vector<int>> ELL::padded_matrix( int**& matrix, int rowsize, in
 
 			std::vector<int> holder( max_rowsize, 0 );
 			std::copy( std::begin( nonzeroes[ i ] ), std::end( nonzeroes[ i ] ), std::begin( holder ) );
+			//holder.resize( max_rowsize );
 			//std::fill( ( holder.begin() + nonzeroes[ i ].size( ) ), holder.end( ), 0 );
-			
+			padded_mtx.push_back( holder );
 		}
 
 		else{
@@ -205,16 +219,17 @@ std::vector<std::vector<int>> ELL::padded_matrix( int**& matrix, int rowsize, in
 	return padded_mtx;
 }
 
+// NOTE: verify if ELL::colIdx is correctly built!
 void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 
-	std::vector<std::vector<int>> padded_matrix = nonzero_matrix( matrix, rowsize, colsize );
+	std::vector<std::vector<int>> padded_mtx = padded_matrix( matrix, rowsize, colsize );
 
 	for( auto col = 0; col < colsize; ++col ){
 
 		for( auto row = 0; row < rowsize; ++row ){
 		
 			colIdx.push_back( col );
-			value.push_back( padded_matrix[ row ][ col ] );
+			value.push_back( padded_mtx[ row ][ col ] );
 		}
 	}
 }
@@ -225,7 +240,69 @@ void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 
 /// JDS - BEGIN
 
+std::vector<std::vector<int>> JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
+	std::vector<std::vector<int>> nonzeroes{ };
+
+	for( auto i = 0; i < rowsize; ++i ){
+
+		std::vector<int> row{ };
+
+		for( auto j = 0; j < colsize; ++j ){
+
+			if( matrix[ i ][ j ] != 0 ){
+
+				row.push_back( matrix[ i ][ j ] );
+			}
+
+			else{
+
+				continue;
+			}
+		}
+
+		nonzeroes.push_back( row );
+	}
+
+	return nonzeroes;
+}
+
+// NOTE: do NOT forget to sort JDS::row
+void JDS::sort_rows( std::vector<std::vector<int>>& matrix ){
+
+	for( auto i = 0; i < matrix.size( ); ++i ){
+
+		for( auto j = 1; j < matrix.size( ); ++j ){
+
+			if( matrix[ i ].size( ) < matrix[ j ].size( ) ){
+
+				std::swap( matrix[ i ], matrix[ j ] );
+			}
+
+			else{
+
+				continue;
+			}
+		}
+	}
+}
+
+void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
+
+	std::vector<std::vector<int>> nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
+	sort_rows( nonzeroes ); // NOTE: maybe let this method be private, since it is not intended to be called outsite methods
+
+	for( auto row = 0; row < nonzeroes.size( ); ++row ){
+
+		for( auto col = 0; col < nonzeroes[ row ].size( ); ++col ){
+
+			if( col <= row ){
+
+				colIdx.push_back( col )
+			}
+		}
+	}
+}
 
 /// END - JDS
 
