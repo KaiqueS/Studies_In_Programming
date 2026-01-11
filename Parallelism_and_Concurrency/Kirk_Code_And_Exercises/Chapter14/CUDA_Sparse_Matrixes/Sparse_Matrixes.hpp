@@ -81,9 +81,16 @@ public:
 	JDS( ){ }
 	~JDS( ){ iterPtr.clear( ); colIdx.clear( ); value.clear( ); }
 
+	std::vector<std::vector<int>> nonzero_matrix( int**& matrix, int rowsize, int colsize );
+	
+	void sort_rows( std::vector<std::vector<int>>& matrix );
+	void build_matrix( int**& matrix, int rowsize, int colsize );
+
 private:
 
 	std::vector<int> iterPtr{ };
 	std::vector<int> colIdx{ };
 	std::vector<int> value{ };
+
+	std::vector<int> row{ };
 };

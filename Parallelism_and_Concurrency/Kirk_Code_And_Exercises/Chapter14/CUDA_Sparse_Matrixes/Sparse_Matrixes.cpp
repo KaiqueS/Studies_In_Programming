@@ -298,7 +298,7 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 
 			if( col <= row ){
 
-				colIdx.push_back( col )
+				
 			}
 		}
 	}
