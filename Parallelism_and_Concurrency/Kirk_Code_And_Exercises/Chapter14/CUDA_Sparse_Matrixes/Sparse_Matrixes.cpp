@@ -267,6 +267,33 @@ std::vector<std::vector<int>> JDS::nonzero_matrix( int**& matrix, int rowsize, i
 	return nonzeroes;
 }
 
+std::vector<std::vector<int>> JDS::nonzero_colidx( int**& matrix, int rowsize, int colsize ){
+
+	std::vector<std::vector<int>> nonzeroes{ };
+
+	for( auto i = 0; i < rowsize; ++i ){
+
+		std::vector<int> row{ };
+
+		for( auto j = 0; j < colsize; ++j ){
+
+			if( matrix[ i ][ j ] != 0 ){
+
+				row.push_back( j );
+			}
+
+			else{
+
+				continue;
+			}
+		}
+
+		nonzeroes.push_back( row );
+	}
+
+	return nonzeroes;
+}
+
 // NOTE: do NOT forget to sort JDS::row
 void JDS::sort_rows( std::vector<std::vector<int>>& matrix ){
 
@@ -290,17 +317,29 @@ void JDS::sort_rows( std::vector<std::vector<int>>& matrix ){
 void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 
 	std::vector<std::vector<int>> nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
-	sort_rows( nonzeroes ); // NOTE: maybe let this method be private, since it is not intended to be called outsite methods
+	std::vector<std::vector<int>> col_nonzeroes = nonzero_colidx( matrix, rowsize, colsize );
+	
+	sort_rows( nonzeroes ); // NOTE: maybe let this method be private, since it is not intended to be called by outside code
+	sort_rows( col_nonzeroes );
 
-	for( auto row = 0; row < nonzeroes.size( ); ++row ){
+	int rowcounter{ 0 };
+	int colcounter{ 0 };
 
-		for( auto col = 0; col < nonzeroes[ row ].size( ); ++col ){
+	// NOTE: since nonzeroes is sorted in descending order, for any 0 <= i < nonzeroes.size( ), we have that the vector
+	//		 nonzeroes[ i ].size( ) >= nonzeroes[ i + 1 ].size( )
+	while( ( rowcounter < nonzeroes.size( ) ) && ( colcounter < nonzeroes.begin( ) -> size( ) ) ){
 
-			if( col <= row ){
+		while( colcounter < nonzeroes[ rowcounter ].size( ) ){
 
-				
-			}
+			colIdx.push_back( col_nonzeroes[ rowcounter ][ colcounter ] );
+			value.push_back( nonzeroes[ rowcounter ][ colcounter ] );
+
+			++rowcounter;
 		}
+
+		rowcounter = 0;
+
+		++colcounter;
 	}
 }
 
