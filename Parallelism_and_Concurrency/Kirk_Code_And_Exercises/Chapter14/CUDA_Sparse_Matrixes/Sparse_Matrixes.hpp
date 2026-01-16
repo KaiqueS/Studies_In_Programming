@@ -84,8 +84,11 @@ public:
 	std::vector<std::vector<int>> nonzero_matrix( int**& matrix, int rowsize, int colsize );
 	std::vector<std::vector<int>> nonzero_colidx( int**& matrix, int rowsize, int colsize );
 
+	const std::vector<int>& get_value( ) const{ return value; }
+
 	void sort_rows( std::vector<std::vector<int>>& matrix );
 	void build_matrix( int**& matrix, int rowsize, int colsize );
+	void build_row( std::vector<std::vector<int>>& matrix );
 
 private:
 

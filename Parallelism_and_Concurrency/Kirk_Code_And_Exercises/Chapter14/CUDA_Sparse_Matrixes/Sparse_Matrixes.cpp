@@ -299,11 +299,12 @@ void JDS::sort_rows( std::vector<std::vector<int>>& matrix ){
 
 	for( auto i = 0; i < matrix.size( ); ++i ){
 
-		for( auto j = 1; j < matrix.size( ); ++j ){
+		for( auto j = i + 1; j < matrix.size( ); ++j ){
 
 			if( matrix[ i ].size( ) < matrix[ j ].size( ) ){
 
 				std::swap( matrix[ i ], matrix[ j ] );
+				std::swap( row[ i ], row[ j ] ); // NOTE: maybe create a separate method for this?
 			}
 
 			else{
@@ -319,6 +320,8 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 	std::vector<std::vector<int>> nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 	std::vector<std::vector<int>> col_nonzeroes = nonzero_colidx( matrix, rowsize, colsize );
 	
+	build_row( nonzeroes );
+
 	sort_rows( nonzeroes ); // NOTE: maybe let this method be private, since it is not intended to be called by outside code
 	sort_rows( col_nonzeroes );
 
@@ -327,19 +330,44 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 
 	// NOTE: since nonzeroes is sorted in descending order, for any 0 <= i < nonzeroes.size( ), we have that the vector
 	//		 nonzeroes[ i ].size( ) >= nonzeroes[ i + 1 ].size( )
-	while( ( rowcounter < nonzeroes.size( ) ) && ( colcounter < nonzeroes.begin( ) -> size( ) ) ){
+	// NOTE: maybe check for nullptr? In case nonzeroes.empty == true.
+	while( colcounter < nonzeroes.begin( ) -> size( ) ){
 
-		while( colcounter < nonzeroes[ rowcounter ].size( ) ){
+		for( std::vector<int> row : nonzeroes ){
 
-			colIdx.push_back( col_nonzeroes[ rowcounter ][ colcounter ] );
-			value.push_back( nonzeroes[ rowcounter ][ colcounter ] );
+			if( colcounter < row.size( ) ){
 
-			++rowcounter;
+				value.push_back( row[ colcounter ] );
+			}
+
+			else{
+
+				continue;
+			}
 		}
 
-		rowcounter = 0;
+		for( std::vector<int> row : col_nonzeroes ){
+
+			if( colcounter < row.size( ) ){
+
+				colIdx.push_back( row[ colcounter ] );
+			}
+
+			else{
+
+				continue;
+			}
+		}
 
 		++colcounter;
+	}
+}
+
+void JDS::build_row( std::vector<std::vector<int>>& matrix ){
+
+	for( auto i = 0; i < matrix.size( ); ++i ){
+
+		row.push_back( i );
 	}
 }
 
