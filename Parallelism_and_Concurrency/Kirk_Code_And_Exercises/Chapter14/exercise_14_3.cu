@@ -55,9 +55,34 @@ void print( const std::vector<int>& matrix ){
 
 /// PROBLEM: 3. Implement the code to convert from COO to CSR using fundamental parallel computing primitives, including histogram and prefix sum.
 
+// IDEA:
+
+	// HISTOGRAM: count the amount of elements from each ROW in COO MATRIX. Use both rowIdx and colIDx to avoid double counting elements
+
+	// PREFIX SUM: scan the histogram, so a to calculate the offset from one row to another
+
 __global__ void COO_CSR_Kernel( COO* input, CSR* output ){
 
+	int globalIndex = ( blockDim.x * blockIdx.x ) + threadIdx.x;
+	
+	std::vector<int> rows{ }; // NOTE: rows might not be in global memory! Careful, here.
 
+	// HISTOGRAM: first, divide COO::rowIdx.size() by gridDim.x, so that each block is responsible for equally-sized subarrays of COO::rowIdx
+	//			  second, if the subarray size is greater than blockDim, then, divide subarray.size by blockDim, so that each thread within the block is responsible for the same amount of elements from the subarray
+	//			  third, for a vector rows from 0 to std::max( COO::rowIdx ), find the corresponding element in rows and perform an atomicAdd	
+	if( globalIndex == 0 ){
+
+		int maxRows = *std::max( input -> get_rowIdx( ).begin( ), input -> get_rowIdx( ).end( ) );
+
+		rows.resize( maxRows, 0 );
+	}
+
+	if( input -> get_rowIdx( ).size( ) > ( gridDim.x * blockDim.x ) ){
+
+
+	}
+
+	/// PREFIX SUM: just scan the vector rows
 }
 
 void kernel_setup( COO*& host_input, CSR*& host_output ){
