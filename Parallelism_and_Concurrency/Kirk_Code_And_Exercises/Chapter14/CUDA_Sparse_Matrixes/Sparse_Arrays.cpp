@@ -233,7 +233,9 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 
-	int** padded_mtx{ };
+	int** padded_mtx{ new int*[ rowsize ] };
+	int** padded_columns{ new int*[ rowsize ] };
+
 	PairOfArrays nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 
 	int max_rowsize{ 0 };
@@ -251,37 +253,45 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 		}
 	}
 
-	for( auto i = 0; i < nonzeroes.size( ); ++i ){
+	for( auto i = 0; i < rowsize; ++i ){
 
-		if( nonzeroes[ i ].size( ) < max_rowsize ){
+		padded_mtx[ i ] = new int[ max_rowsize ]{ 0 };
+		padded_columns[ i ] = new int[ max_rowsize ]{ 0 };
 
-			std::vector<int> holder( max_rowsize, 0 );
-			std::copy( std::begin( nonzeroes[ i ] ), std::end( nonzeroes[ i ] ), std::begin( holder ) );
-			//holder.resize( max_rowsize );
+		if( nonzeroes.row_sizes[ i ] < max_rowsize ){
+
+			std::copy( nonzeroes.column[ i ][ 0 ], nonzeroes.column[ i ][ nonzeroes.row_sizes[ i ] - 1 ], padded_columns[ i ] );
+			std::copy( nonzeroes.values[ i ][ 0 ], nonzeroes.values[ i ][ nonzeroes.row_sizes[ i ] - 1 ], padded_mtx[ i ] );
+			
 			//std::fill( ( holder.begin() + nonzeroes[ i ].size( ) ), holder.end( ), 0 );
-			padded_mtx.push_back( holder );
 		}
 
 		else{
 
-			padded_mtx.push_back( nonzeroes[ i ] );
+			std::copy( nonzeroes.column[ i ][ 0 ], nonzeroes.column[ i ][ max_rowsize - 1 ], padded_columns[ i ] );
+			std::copy( nonzeroes.values[ i ][ 0 ], nonzeroes.values[ i ][ max_rowsize - 1 ], padded_mtx[ i ] );
 		}
 	}
 
-	return padded_mtx;
+	nonzeroes.column = padded_columns;
+	nonzeroes.values = padded_mtx;
+	*nonzeroes.row_sizes = max_rowsize;
+
+	return nonzeroes;
 }
 
 // NOTE: verify if ELL::colIdx is correctly built!
 void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 
-	std::vector<std::vector<int>> padded_mtx = padded_matrix( matrix, rowsize, colsize );
+	PairOfArrays padded_mtx = padded_matrix( matrix, rowsize, colsize );
 
-	for( auto col = 0; col < colsize; ++col ){
+	for( auto col = 0; col < *padded_mtx.row_sizes; ++col ){
 
 		for( auto row = 0; row < rowsize; ++row ){
 		
-			colIdx.push_back( col );
-			value.push_back( padded_mtx[ row ][ col ] );
+			// Mapping formula might be wrong
+			colIdx[ ( row * rowsize ) + col ] = padded_mtx.column[ row ][ col ];
+			value[ ( row * rowsize ) + col ] = padded_mtx.values[ row ][ col ];
 		}
 	}
 }

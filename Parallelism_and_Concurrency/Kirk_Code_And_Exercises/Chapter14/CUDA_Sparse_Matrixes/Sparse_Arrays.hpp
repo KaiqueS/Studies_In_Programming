@@ -3,6 +3,17 @@
 #include <algorithm>
 #include <iterator>
 
+struct PairOfArrays{
+
+	PairOfArrays( ){ }
+	~PairOfArrays( ){ delete[ ] column, values, row_sizes; }
+
+	int** column{ nullptr };
+	int** values{ nullptr };
+
+	int* row_sizes{ nullptr };
+};
+
 class COO{
 
 public:
@@ -57,15 +68,6 @@ private:
 	int zeroes{ 0 };
 };
 
-struct PairOfArrays{
-
-	PairOfArrays( ){ }
-	~PairOfArrays( ){ delete[ ] column, values; }
-
-	int** column{ nullptr };
-	int** values{ nullptr };
-};
-
 class ELL{
 
 public:
@@ -99,9 +101,9 @@ public:
 
 	const int* get_value( ) const{ return value; }
 
-	void sort_rows( std::vector<std::vector<int>>& matrix );
+	void sort_rows( int**& matrix, int rowsize, int colsize );
 	void build_matrix( int**& matrix, int rowsize, int colsize );
-	void build_row( std::vector<std::vector<int>>& matrix );
+	void build_row( int**& matrix, int rowsize, int colsize );
 
 private:
 
