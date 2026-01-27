@@ -171,19 +171,52 @@ void CSR::build_CSR( int**& matrix, int rowSize, int colSize ){
 
 /// ELL - BEGIN
 
-int** ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
+PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
-	int** nonzeroes{ };
+	PairOfArrays nonzeroes{ };
 
+	//int** nonzeroes{ };
+
+	nonzeroes.row_sizes = new int[ rowsize ];
+
+	// Counts the amount of nonzeroes in each row of matrix. Stores the amount in nonzeroes_counter array
 	for( auto i = 0; i < rowsize; ++i ){
-
-		std::vector<int> row{ };
 
 		for( auto j = 0; j < colsize; ++j ){
 
 			if( matrix[ i ][ j ] != 0 ){
 
-				row.push_back( matrix[ i ][ j ] );
+				++nonzeroes.row_sizes[ i ];
+			}
+
+			else{
+
+				continue;
+			}
+		}
+	}
+
+	for( auto i = 0; i < rowsize; ++i ){
+
+		nonzeroes.column = new int*[ nonzeroes.row_sizes[ i ] ];
+		nonzeroes.values = new int*[ nonzeroes.row_sizes[ i ] ];
+	}
+
+	// NOTE: might have a problem when nonzeroes_counter[ i ] == 0.
+	//		 Also - I could have put the below loops within the for loop at LOC 197, but
+	//		 it would be hard to read.
+	for( auto i = 0; i < rowsize; ++i ){
+
+		int backward_counter = nonzeroes.row_sizes[ i ];
+
+		for( auto j = 0; j < colsize; ++j ){
+
+			if( matrix[ i ][ j ] != 0 ){
+
+				nonzeroes.column[ i ][ nonzeroes.row_sizes[ i ] - backward_counter ] = j;
+				nonzeroes.values[ i ][ nonzeroes.row_sizes[ i ] - backward_counter ] = matrix[ i ][ j ];
+				
+				--backward_counter;
 			}
 
 			else{
@@ -192,24 +225,24 @@ int** ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 			}
 		}
 
-		nonzeroes.push_back( row );
+		backward_counter = 0;
 	}
 
 	return nonzeroes;
 }
 
-std::vector<std::vector<int>> ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
+PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 
-	std::vector<std::vector<int>> padded_mtx{ };
-	std::vector<std::vector<int>> nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
+	int** padded_mtx{ };
+	PairOfArrays nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 
 	int max_rowsize{ 0 };
 
-	for( auto i = 0; i < nonzeroes.size( ); ++i ){
+	for( auto i = 0; i < rowsize; ++i ){
 
-		if( nonzeroes[ i ].size( ) > max_rowsize ){
+		if( nonzeroes.row_sizes[ i ] > max_rowsize ){
 
-			max_rowsize = nonzeroes[ i ].size( );
+			max_rowsize = nonzeroes.row_sizes[ i ];
 		}
 
 		else{

@@ -57,6 +57,15 @@ private:
 	int zeroes{ 0 };
 };
 
+struct PairOfArrays{
+
+	PairOfArrays( ){ }
+	~PairOfArrays( ){ delete[ ] column, values; }
+
+	int** column{ nullptr };
+	int** values{ nullptr };
+};
+
 class ELL{
 
 public:
@@ -66,8 +75,8 @@ public:
 
 	void build_ELL( int**& matrix, int rowsize, int colsize );
 
-	int** nonzero_matrix( int**& matrix, int rowsize, int colsize );
-	int** padded_matrix( int**& matrix, int rowsize, int colsize );
+	PairOfArrays nonzero_matrix( int**& matrix, int rowsize, int colsize );
+	PairOfArrays padded_matrix( int**& matrix, int rowsize, int colsize );
 
 	const int* get_colIdx( ) const{ return colIdx; }
 	const int* get_value( ) const{ return value; }
