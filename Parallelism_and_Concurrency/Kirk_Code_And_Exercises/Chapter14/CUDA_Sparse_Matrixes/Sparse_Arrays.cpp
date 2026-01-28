@@ -233,8 +233,8 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 
-	int** padded_mtx{ new int*[ rowsize ] };
-	int** padded_columns{ new int*[ rowsize ] };
+	int** padded_mtx = new int*[ rowsize ];
+	int** padded_columns = new int*[ rowsize ];
 
 	PairOfArrays nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 
@@ -302,19 +302,22 @@ void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 
 /// JDS - BEGIN
 
-std::vector<std::vector<int>> JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
+PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
-	std::vector<std::vector<int>> nonzeroes{ };
+	PairOfArrays nonzeroes{ };
 
+	//int** nonzeroes{ };
+
+	nonzeroes.row_sizes = new int[ rowsize ];
+
+	// Counts the amount of nonzeroes in each row of matrix. Stores the amount in nonzeroes_counter array
 	for( auto i = 0; i < rowsize; ++i ){
-
-		std::vector<int> row{ };
 
 		for( auto j = 0; j < colsize; ++j ){
 
 			if( matrix[ i ][ j ] != 0 ){
 
-				row.push_back( matrix[ i ][ j ] );
+				++nonzeroes.row_sizes[ i ];
 			}
 
 			else{
@@ -322,26 +325,29 @@ std::vector<std::vector<int>> JDS::nonzero_matrix( int**& matrix, int rowsize, i
 				continue;
 			}
 		}
-
-		nonzeroes.push_back( row );
 	}
 
-	return nonzeroes;
-}
-
-std::vector<std::vector<int>> JDS::nonzero_colidx( int**& matrix, int rowsize, int colsize ){
-
-	std::vector<std::vector<int>> nonzeroes{ };
-
 	for( auto i = 0; i < rowsize; ++i ){
 
-		std::vector<int> row{ };
+		nonzeroes.column = new int*[ nonzeroes.row_sizes[ i ] ];
+		nonzeroes.values = new int*[ nonzeroes.row_sizes[ i ] ];
+	}
+
+	// NOTE: might have a problem when nonzeroes_counter[ i ] == 0.
+	//		 Also - I could have put the below loops within the for loop at LOC 197, but
+	//		 it would be hard to read.
+	for( auto i = 0; i < rowsize; ++i ){
+
+		int backward_counter = nonzeroes.row_sizes[ i ];
 
 		for( auto j = 0; j < colsize; ++j ){
 
 			if( matrix[ i ][ j ] != 0 ){
 
-				row.push_back( j );
+				nonzeroes.column[ i ][ nonzeroes.row_sizes[ i ] - backward_counter ] = j;
+				nonzeroes.values[ i ][ nonzeroes.row_sizes[ i ] - backward_counter ] = matrix[ i ][ j ];
+				
+				--backward_counter;
 			}
 
 			else{
@@ -350,23 +356,25 @@ std::vector<std::vector<int>> JDS::nonzero_colidx( int**& matrix, int rowsize, i
 			}
 		}
 
-		nonzeroes.push_back( row );
+		backward_counter = 0;
 	}
 
 	return nonzeroes;
 }
 
 // NOTE: do NOT forget to sort JDS::row
-void JDS::sort_rows( std::vector<std::vector<int>>& matrix ){
+void JDS::sort_rows( PairOfArrays& matrix, int rowsize ){
 
-	for( auto i = 0; i < matrix.size( ); ++i ){
+	for( auto i = 0; i < rowsize; ++i ){
 
-		for( auto j = i + 1; j < matrix.size( ); ++j ){
+		for( auto j = i + 1; j < rowsize; ++j ){
 
-			if( matrix[ i ].size( ) < matrix[ j ].size( ) ){
+			if( matrix.row_sizes[ i ] < matrix.row_sizes[ j ] ){
 
-				std::swap( matrix[ i ], matrix[ j ] );
+				std::swap( matrix.column[ i ], matrix.column[ j ] );
+				std::swap( matrix.values[ i ], matrix.values[ j ] );
 				std::swap( row[ i ], row[ j ] ); // NOTE: maybe create a separate method for this?
+				std::swap( matrix.row_sizes[ i ], matrix.row_sizes[ j ] ); // NOTE: this might be WRONG
 			}
 
 			else{
@@ -379,57 +387,76 @@ void JDS::sort_rows( std::vector<std::vector<int>>& matrix ){
 
 void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 
-	std::vector<std::vector<int>> nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
-	std::vector<std::vector<int>> col_nonzeroes = nonzero_colidx( matrix, rowsize, colsize );
+	PairOfArrays nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 	
-	build_row( nonzeroes );
+	build_row( rowsize );
 
-	sort_rows( nonzeroes ); // NOTE: maybe let this method be private, since it is not intended to be called by outside code
-	sort_rows( col_nonzeroes );
+	sort_rows( nonzeroes, rowsize ); // NOTE: maybe let this method be private, since it is not intended to be called by outside code
+
+	int max_rowsize = nonzeroes.row_sizes[ 0 ];
+	int total_elements{ 0 };
+
+	for( auto i = 0; i < rowsize; ++i ){
+
+		if( max_rowsize < nonzeroes.row_sizes[ i ] ){
+
+			max_rowsize = nonzeroes.row_sizes[ i ];
+			total_elements += nonzeroes.row_sizes[ i ];
+		}
+
+		else{
+
+			continue;
+		}
+	}
+
+	iterPtr = new int[ rowsize ]{ 0 };
+	colIdx = new int[ total_elements ];
+	value = new int[ total_elements ];
 
 	int rowcounter{ 0 };
 	int colcounter{ 0 };
+	int ptr_counter{ 0 };
 
-	// NOTE: since nonzeroes is sorted in descending order, for any 0 <= i < nonzeroes.size( ), we have that the vector
-	//		 nonzeroes[ i ].size( ) >= nonzeroes[ i + 1 ].size( )
-	// NOTE: maybe check for nullptr? In case nonzeroes.empty == true.
-	while( colcounter < nonzeroes.begin( ) -> size( ) ){
+	while( colcounter < max_rowsize ){
 
-		for( std::vector<int> row : nonzeroes ){
+		while( rowcounter < rowsize ){
 
-			if( colcounter < row.size( ) ){
+			if( colcounter < nonzeroes.row_sizes[ rowcounter ] ){
 
-				value.push_back( row[ colcounter ] );
+				colIdx[ ( rowcounter * nonzeroes.row_sizes[ rowcounter ] ) + colcounter ] = nonzeroes.column[ rowcounter ][ colcounter ];
+				value[ ( rowcounter * nonzeroes.row_sizes[ rowcounter ] ) + colcounter ] = nonzeroes.values[ rowcounter ][ colcounter ];
 			}
 
 			else{
 
 				continue;
 			}
+
+			++rowcounter;
 		}
 
-		for( std::vector<int> row : col_nonzeroes ){
-
-			if( colcounter < row.size( ) ){
-
-				colIdx.push_back( row[ colcounter ] );
-			}
-
-			else{
-
-				continue;
-			}
-		}
+		rowcounter = 0;
 
 		++colcounter;
 	}
+
+	for( auto i = 1; i < rowsize; ++i ){
+		
+		ptr_counter += nonzeroes.row_sizes[ i ];
+
+		iterPtr[ i ] = ptr_counter;
+	}
+
 }
 
-void JDS::build_row( std::vector<std::vector<int>>& matrix ){
+void JDS::build_row( int rowsize ){
 
-	for( auto i = 0; i < matrix.size( ); ++i ){
+	row = new int[ rowsize ];
 
-		row.push_back( i );
+	for( auto i = 0; i < rowsize; ++i ){
+
+		row[ i ] = i;
 	}
 }
 

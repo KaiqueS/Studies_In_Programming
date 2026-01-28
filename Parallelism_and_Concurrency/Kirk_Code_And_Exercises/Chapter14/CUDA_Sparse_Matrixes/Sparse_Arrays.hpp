@@ -1,7 +1,7 @@
 #pragma once
 
 #include <algorithm>
-#include <iterator>
+//#include <iterator>
 
 struct PairOfArrays{
 
@@ -96,14 +96,13 @@ public:
 	JDS( ){ }
 	~JDS( ){ delete[ ] iterPtr, colIdx, value, row; }
 
-	int** nonzero_matrix( int**& matrix, int rowsize, int colsize );
-	int** nonzero_colidx( int**& matrix, int rowsize, int colsize );
+	PairOfArrays nonzero_matrix( int**& matrix, int rowsize, int colsize );
 
-	const int* get_value( ) const{ return value; }
+	int* get_value( ) const{ return value; }
 
-	void sort_rows( int**& matrix, int rowsize, int colsize );
+	void sort_rows( PairOfArrays& matrix, int rowsize );
 	void build_matrix( int**& matrix, int rowsize, int colsize );
-	void build_row( int**& matrix, int rowsize, int colsize );
+	void build_row( int rowsize );
 
 private:
 
