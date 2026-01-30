@@ -2,7 +2,6 @@
 
 /// COO - BEGIN
 
-
 // NOTE: I could parallelize this later using tiling to speed things up.
 int COO::count_Zeroes( int**& matrix, int rowSize, int colSize ){
 
@@ -30,29 +29,34 @@ int COO::count_Zeroes( int**& matrix, int rowSize, int colSize ){
 // NOTE: COO arrays are unidimensional
 void COO::allocate_COO( int**&matrix, int rowSize, int colSize ){
 
-	int zeroes{ count_Zeroes( matrix, rowSize, colSize ) };
+	zeroes = count_Zeroes( matrix, rowSize, colSize );
 
 	rowIdx = new int[ ( rowSize * colSize ) - zeroes ];
 	colIdx = new int[ ( rowSize * colSize ) - zeroes ];
 	value = new int[ ( rowSize * colSize ) - zeroes ];
+
+	size = ( rowSize * colSize ) - zeroes;
 }
 
 void COO::build_COO( int**& matrix, int rowSize, int colSize ){
 
-	zeroes = count_Zeroes( matrix, rowSize, colSize );
-
 	allocate_COO( matrix, rowSize, colSize );
+
+	int counter{ 0 };
 
 	for( auto i = 0; i < rowSize; ++i ){
 
 		for( auto j = 0; j < colSize; ++j ){
 
 			// NOTE: any time we hit a 0, we use zeroes to put matrix[ i ][ j ] into the correct position in value, rowIdx, and colIdx
-			if( ( matrix[ i ][ j ] != 0 ) && ( ( ( i * rowSize ) + j ) < ( ( rowSize * colSize ) - zeroes ) ) ){
+			if( matrix[ i ][ j ] != 0 ){
 
-				rowIdx[ ( i * rowSize ) + j ] = i;
-				colIdx[ ( i * rowSize ) + j ] = j;
-				value[ ( i * rowSize ) + j ] = matrix[ i ][ j ];
+				// NOTE: I could use the mapping ( ( i * rowsize ) + j - counter ) if I increment counter on the else block
+				rowIdx[ counter ] = i;
+				colIdx[ counter ] = j;
+				value[ counter ] = matrix[ i ][ j ];
+
+				++counter;
 			}
 			
 			else{
@@ -61,19 +65,19 @@ void COO::build_COO( int**& matrix, int rowSize, int colSize ){
 			}
 		}
 	}
-
-	size = ( rowSize * colSize ) - zeroes;
 }
 
+// NOTE: needs testing
 void COO::insert_element( int row, int col, int element ){
 
 	int* newRow = new int[ size + 1 ];
 	int* newCol = new int[ size + 1 ];
 	int* newVal = new int[ size + 1 ];
 
-	std::copy( rowIdx[ 0 ], rowIdx[ size - 1 ], newRow[ 0 ] );
-	std::copy( colIdx[ 0 ], colIdx[ size - 1 ], newCol[ 0 ] );
-	std::copy( value[ 0 ], value[ size - 1 ], newVal[ 0 ] );
+	// NOTE: maybe ( size - 1 ) instead of size
+	std::copy( &rowIdx[ 0 ], &rowIdx[ 0 ] + size, &newRow[ 0 ] );
+	std::copy( &colIdx[ 0 ], &colIdx[ 0 ] + size, &newCol[ 0 ] );
+	std::copy( &value[ 0 ], &value[ 0 ] + size, &newVal[ 0 ] );
 
 	newRow[ size ] = row;
 	newCol[ size ] = col;
@@ -88,6 +92,7 @@ void COO::insert_element( int row, int col, int element ){
 	delete[ ] newRow, newCol, newVal;
 }
 
+// NOTE: needs testing
 void COO::reorder( int left_index, int right_index ){
 
 	std::swap( rowIdx[ left_index ], rowIdx[ right_index ] );
@@ -129,7 +134,7 @@ void CSR::allocate_CSR( int**&matrix, int rowSize, int colSize ){
 
 	zeroes = count_Zeroes( matrix, rowSize, colSize );
 
-	rowPtrs = new int[ rowSize + 1 ];
+	rowPtrs = new int[ rowSize + 1 ]{ 0 };
 	colIdx = new int[ ( rowSize * colSize ) - zeroes ];
 	value = new int[ ( rowSize * colSize ) - zeroes ];
 
@@ -142,18 +147,19 @@ void CSR::build_CSR( int**& matrix, int rowSize, int colSize ){
 
 	rowPtrs[ 0 ] = 0;
 
+	int counter{ 0 };
+
 	for( auto i = 0; i < rowSize; ++i ){
 
 		for( auto j = 0; j < colSize; ++j ){
 
 			// NOTE: any time we hit a 0, we use zeroes to put matrix[ i ][ j ] into the correct position in value, rowIdx, and colIdx
-			if( ( matrix[ i ][ j ] != 0 ) && ( ( ( i * rowSize ) + j ) < ( ( rowSize * colSize ) - zeroes ) ) ){
+			if( matrix[ i ][ j ] != 0 ){
 
-				value[ ( i * rowSize ) + j ] = ( matrix[ i ][ j ] );
-				colIdx[ ( i * rowSize ) + j ] = j;
-
-				// NOTE: this means that, if rowPtrs[ x ] == rowPtrs[ x + 1 ], then row x has no nonzero elements
-				rowPtrs[ i + 1 ] += 1;
+				value[ counter ] = matrix[ i ][ j ];
+				colIdx[ counter ] = j;
+				
+				++counter;
 			}
 			
 			// NOTE: If we hit a 0 in matrix, we increment the offset zeroes
@@ -162,6 +168,8 @@ void CSR::build_CSR( int**& matrix, int rowSize, int colSize ){
 				continue;
 			}
 		}
+
+		rowPtrs[ i + 1 ] = counter;
 	}
 }
 
@@ -174,10 +182,13 @@ void CSR::build_CSR( int**& matrix, int rowSize, int colSize ){
 PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 	PairOfArrays nonzeroes{ };
+	nonzeroes.column = new int*[ rowsize ];
+	nonzeroes.values = new int*[ rowsize ];
+
 
 	//int** nonzeroes{ };
 
-	nonzeroes.row_sizes = new int[ rowsize ];
+	nonzeroes.row_sizes = new int[ rowsize ]{ 0 };
 
 	// Counts the amount of nonzeroes in each row of matrix. Stores the amount in nonzeroes_counter array
 	for( auto i = 0; i < rowsize; ++i ){
@@ -198,8 +209,10 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 	for( auto i = 0; i < rowsize; ++i ){
 
-		nonzeroes.column = new int*[ nonzeroes.row_sizes[ i ] ];
-		nonzeroes.values = new int*[ nonzeroes.row_sizes[ i ] ];
+		nonzeroes.column[ i ] = new int[ nonzeroes.row_sizes[ i ] ]{ 0 };
+		nonzeroes.values[ i ] = new int[ nonzeroes.row_sizes[ i ] ]{ 0 };
+
+		size += nonzeroes.row_sizes[ i ];
 	}
 
 	// NOTE: might have a problem when nonzeroes_counter[ i ] == 0.
@@ -224,8 +237,6 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 				continue;
 			}
 		}
-
-		backward_counter = 0;
 	}
 
 	return nonzeroes;
@@ -233,8 +244,8 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 
-	int** padded_mtx = new int*[ rowsize ];
-	int** padded_columns = new int*[ rowsize ];
+	int** padded_mtx = new int*[ rowsize ]{ nullptr };
+	int** padded_columns = new int*[ rowsize ]{ nullptr };
 
 	PairOfArrays nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 
@@ -253,6 +264,7 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 		}
 	}
 
+	
 	for( auto i = 0; i < rowsize; ++i ){
 
 		padded_mtx[ i ] = new int[ max_rowsize ]{ 0 };
@@ -260,22 +272,27 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 
 		if( nonzeroes.row_sizes[ i ] < max_rowsize ){
 
-			std::copy( nonzeroes.column[ i ][ 0 ], nonzeroes.column[ i ][ nonzeroes.row_sizes[ i ] - 1 ], padded_columns[ i ] );
-			std::copy( nonzeroes.values[ i ][ 0 ], nonzeroes.values[ i ][ nonzeroes.row_sizes[ i ] - 1 ], padded_mtx[ i ] );
+			int index = nonzeroes.row_sizes[ i ];
+
+			// NOTE: when copying dynamically allocated arrays using std::copy, use the following syntax
+			std::copy( &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ) + index, &padded_columns[ 0 ][ 0 ] + ( i * rowsize ) );
+			std::copy( &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ) + index, &padded_mtx[ 0 ][ 0 ] + ( i * rowsize ) );
 			
 			//std::fill( ( holder.begin() + nonzeroes[ i ].size( ) ), holder.end( ), 0 );
 		}
 
 		else{
 
-			std::copy( nonzeroes.column[ i ][ 0 ], nonzeroes.column[ i ][ max_rowsize - 1 ], padded_columns[ i ] );
-			std::copy( nonzeroes.values[ i ][ 0 ], nonzeroes.values[ i ][ max_rowsize - 1 ], padded_mtx[ i ] );
+			std::copy( &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ) + max_rowsize, &padded_columns[ 0 ][ 0 ] + ( i * rowsize ) );
+			std::copy( &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ) + max_rowsize, &padded_mtx[ 0 ][ 0 ] + ( i * rowsize ) );
 		}
 	}
 
 	nonzeroes.column = padded_columns;
 	nonzeroes.values = padded_mtx;
-	*nonzeroes.row_sizes = max_rowsize;
+	nonzeroes.row_sizes = &max_rowsize;
+
+	delete[ ] padded_mtx, padded_columns;
 
 	return nonzeroes;
 }
@@ -301,6 +318,8 @@ void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 // ------------------
 
 /// JDS - BEGIN
+
+/*
 
 PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
@@ -462,4 +481,4 @@ void JDS::build_row( int rowsize ){
 
 /// END - JDS
 
-// ------------------
+// ------------------*/

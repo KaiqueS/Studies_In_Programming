@@ -3,6 +3,7 @@
 #include <algorithm>
 //#include <iterator>
 
+
 struct PairOfArrays{
 
 	PairOfArrays( ){ }
@@ -13,6 +14,7 @@ struct PairOfArrays{
 
 	int* row_sizes{ nullptr };
 };
+
 
 class COO{
 
@@ -31,6 +33,7 @@ public:
 	const int* get_rowIdx( ) const{ return rowIdx; }
 	const int* get_colIdx( ) const{ return colIdx; }
 	const int* get_value( ) const{ return value; }
+	const int get_size( ) const{ return size; }
 
 private:
 
@@ -57,6 +60,7 @@ public:
 	const int* get_rowPtrs( ) const{ return rowPtrs; }
 	const int* get_colIdx( ) const{ return colIdx; }
 	const int* get_value( ) const{ return value; }
+	const int get_size( ) const{ return size; }
 
 private:
 
@@ -83,10 +87,14 @@ public:
 	const int* get_colIdx( ) const{ return colIdx; }
 	const int* get_value( ) const{ return value; }
 
+	const int get_size( ) const{ return size; }
+
 private:
 
 	int* colIdx{ nullptr };
 	int* value{ nullptr };
+
+	int size{ 0 };
 };
 
 class JDS{
