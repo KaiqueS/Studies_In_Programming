@@ -184,10 +184,6 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 	PairOfArrays nonzeroes{ };
 	nonzeroes.column = new int*[ rowsize ];
 	nonzeroes.values = new int*[ rowsize ];
-
-
-	//int** nonzeroes{ };
-
 	nonzeroes.row_sizes = new int[ rowsize ]{ 0 };
 
 	// Counts the amount of nonzeroes in each row of matrix. Stores the amount in nonzeroes_counter array
@@ -244,8 +240,9 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 
-	int** padded_mtx = new int*[ rowsize ]{ nullptr };
-	int** padded_columns = new int*[ rowsize ]{ nullptr };
+	PairOfArrays padded_mtx{ };
+	padded_mtx.column = new int*[ rowsize ]{ nullptr };
+	padded_mtx.values = new int*[ rowsize ]{ nullptr };
 
 	PairOfArrays nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 
@@ -267,34 +264,23 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 	
 	for( auto i = 0; i < rowsize; ++i ){
 
-		padded_mtx[ i ] = new int[ max_rowsize ]{ 0 };
-		padded_columns[ i ] = new int[ max_rowsize ]{ 0 };
+		padded_mtx.column[ i ] = new int[ max_rowsize ]{ 0 };
+		padded_mtx.values[ i ] = new int[ max_rowsize ]{ 0 };
 
-		if( nonzeroes.row_sizes[ i ] < max_rowsize ){
+		for( auto j = 0; j < nonzeroes.row_sizes[ i ]; ++j ){
 
-			int index = nonzeroes.row_sizes[ i ];
-
-			// NOTE: when copying dynamically allocated arrays using std::copy, use the following syntax
-			std::copy( &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ) + index, &padded_columns[ 0 ][ 0 ] + ( i * rowsize ) );
-			std::copy( &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ) + index, &padded_mtx[ 0 ][ 0 ] + ( i * rowsize ) );
-			
-			//std::fill( ( holder.begin() + nonzeroes[ i ].size( ) ), holder.end( ), 0 );
-		}
-
-		else{
-
-			std::copy( &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.column[ 0 ][ 0 ] + ( i * rowsize ) + max_rowsize, &padded_columns[ 0 ][ 0 ] + ( i * rowsize ) );
-			std::copy( &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ), &nonzeroes.values[ 0 ][ 0 ] + ( i * rowsize ) + max_rowsize, &padded_mtx[ 0 ][ 0 ] + ( i * rowsize ) );
+			padded_mtx.column[ i ][ j ] = nonzeroes.column[ i ][ j ];
+			padded_mtx.values[ i ][ j ] = nonzeroes.values[ i ][ j ];
 		}
 	}
 
-	nonzeroes.column = padded_columns;
-	nonzeroes.values = padded_mtx;
-	nonzeroes.row_sizes = &max_rowsize;
+	//std::copy( &padded_mtx[ 0 ][ 0 ], &padded_mtx[ 0 ][ 0 ] + ( max_rowsize * max_rowsize ), &nonzeroes.values[ 0 ][ 0 ] );
+	//std::copy( &padded_columns[ 0 ][ 0 ], &padded_columns[ 0 ][ 0 ] + ( max_rowsize * max_rowsize ), &nonzeroes.column[ 0 ][ 0 ] );
+	//padded_mtx.column = nonzeroes.column;
+	//padded_mtx.values = nonzeroes.values;
+	padded_mtx.row_sizes = new int{ max_rowsize };
 
-	delete[ ] padded_mtx, padded_columns;
-
-	return nonzeroes;
+	return padded_mtx;
 }
 
 // NOTE: verify if ELL::colIdx is correctly built!
@@ -302,13 +288,19 @@ void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 
 	PairOfArrays padded_mtx = padded_matrix( matrix, rowsize, colsize );
 
+	colIdx = new int[ *padded_mtx.row_sizes * *padded_mtx.row_sizes ]{ 0 };
+	value = new int[ *padded_mtx.row_sizes * *padded_mtx.row_sizes ]{ 0 };
+	size = ( *padded_mtx.row_sizes * *padded_mtx.row_sizes );
+
 	for( auto col = 0; col < *padded_mtx.row_sizes; ++col ){
 
+		// NOTE: I think rowsize is wrong. E.g.: if matrix has one row full of zeroes, this row should be deleted when
+		//		 nonzero_matrix is called, meaning that the nonzero matrix has rowsize - 1 rows.
 		for( auto row = 0; row < rowsize; ++row ){
 		
-			// Mapping formula might be wrong
-			colIdx[ ( row * rowsize ) + col ] = padded_mtx.column[ row ][ col ];
-			value[ ( row * rowsize ) + col ] = padded_mtx.values[ row ][ col ];
+			// NOTE: this mapping WORKS but it is not right.
+			colIdx[ ( col * *padded_mtx.row_sizes ) + row ] = padded_mtx.column[ row ][ col ];
+			value[ ( col * *padded_mtx.row_sizes ) + row ] = padded_mtx.values[ row ][ col ];
 		}
 	}
 }
