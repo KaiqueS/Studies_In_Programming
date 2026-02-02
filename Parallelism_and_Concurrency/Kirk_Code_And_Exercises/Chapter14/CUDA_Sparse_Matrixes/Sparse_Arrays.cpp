@@ -311,15 +311,13 @@ void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 
 /// JDS - BEGIN
 
-/*
-
 PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 	PairOfArrays nonzeroes{ };
 
 	//int** nonzeroes{ };
 
-	nonzeroes.row_sizes = new int[ rowsize ];
+	nonzeroes.row_sizes = new int[ rowsize ]{ 0 };
 
 	// Counts the amount of nonzeroes in each row of matrix. Stores the amount in nonzeroes_counter array
 	for( auto i = 0; i < rowsize; ++i ){
@@ -340,8 +338,8 @@ PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 	for( auto i = 0; i < rowsize; ++i ){
 
-		nonzeroes.column = new int*[ nonzeroes.row_sizes[ i ] ];
-		nonzeroes.values = new int*[ nonzeroes.row_sizes[ i ] ];
+		nonzeroes.column = new int*[ nonzeroes.row_sizes[ i ] ]{ 0 };
+		nonzeroes.values = new int*[ nonzeroes.row_sizes[ i ] ]{ 0 };
 	}
 
 	// NOTE: might have a problem when nonzeroes_counter[ i ] == 0.
@@ -459,6 +457,8 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 		iterPtr[ i ] = ptr_counter;
 	}
 
+	size = *nonzeroes.row_sizes;
+
 }
 
 void JDS::build_row( int rowsize ){
@@ -473,4 +473,4 @@ void JDS::build_row( int rowsize ){
 
 /// END - JDS
 
-// ------------------*/
+// ------------------

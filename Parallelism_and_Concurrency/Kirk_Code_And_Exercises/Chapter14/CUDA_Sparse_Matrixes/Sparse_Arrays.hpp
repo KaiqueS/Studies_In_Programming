@@ -106,7 +106,9 @@ public:
 
 	PairOfArrays nonzero_matrix( int**& matrix, int rowsize, int colsize );
 
-	int* get_value( ) const{ return value; }
+	const int* get_value( ) const{ return value; }
+
+	const int get_size( ) const{ return size; }
 
 	void sort_rows( PairOfArrays& matrix, int rowsize );
 	void build_matrix( int**& matrix, int rowsize, int colsize );
@@ -119,4 +121,6 @@ private:
 	int* value{ nullptr };
 
 	int* row{ nullptr };
+
+	int size{ 0 };
 };
