@@ -314,9 +314,8 @@ void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 	PairOfArrays nonzeroes{ };
-
-	//int** nonzeroes{ };
-
+	nonzeroes.column = new int*[ rowsize ]{ nullptr };
+	nonzeroes.values = new int*[ rowsize ]{ nullptr };
 	nonzeroes.row_sizes = new int[ rowsize ]{ 0 };
 
 	// Counts the amount of nonzeroes in each row of matrix. Stores the amount in nonzeroes_counter array
@@ -338,8 +337,8 @@ PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 	for( auto i = 0; i < rowsize; ++i ){
 
-		nonzeroes.column = new int*[ nonzeroes.row_sizes[ i ] ]{ 0 };
-		nonzeroes.values = new int*[ nonzeroes.row_sizes[ i ] ]{ 0 };
+		nonzeroes.column[ i ] = new int[ nonzeroes.row_sizes[ i ] ]{ 0 };
+		nonzeroes.values[ i ] = new int[ nonzeroes.row_sizes[ i ] ]{ 0 };
 	}
 
 	// NOTE: might have a problem when nonzeroes_counter[ i ] == 0.
@@ -365,7 +364,7 @@ PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 			}
 		}
 
-		backward_counter = 0;
+		//backward_counter = 0;
 	}
 
 	return nonzeroes;
@@ -405,23 +404,22 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 	int max_rowsize = nonzeroes.row_sizes[ 0 ];
 	int total_elements{ 0 };
 
+	// NOTE: by sort_rows, rows are already sorted, meaning that max_rowsize = nonzeroes.row_size[ 0 ] already stores the largest row. This loop é redundant
 	for( auto i = 0; i < rowsize; ++i ){
 
 		if( max_rowsize < nonzeroes.row_sizes[ i ] ){
 
 			max_rowsize = nonzeroes.row_sizes[ i ];
-			total_elements += nonzeroes.row_sizes[ i ];
 		}
 
-		else{
-
-			continue;
-		}
+		total_elements += nonzeroes.row_sizes[ i ];
 	}
 
+	size = total_elements;
+
 	iterPtr = new int[ rowsize ]{ 0 };
-	colIdx = new int[ total_elements ];
-	value = new int[ total_elements ];
+	colIdx = new int[ total_elements ]{ 0 };
+	value = new int[ total_elements ]{ 0 };
 
 	int rowcounter{ 0 };
 	int colcounter{ 0 };
@@ -431,15 +429,11 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 
 		while( rowcounter < rowsize ){
 
+			// Maybe the error is here?
 			if( colcounter < nonzeroes.row_sizes[ rowcounter ] ){
 
-				colIdx[ ( rowcounter * nonzeroes.row_sizes[ rowcounter ] ) + colcounter ] = nonzeroes.column[ rowcounter ][ colcounter ];
-				value[ ( rowcounter * nonzeroes.row_sizes[ rowcounter ] ) + colcounter ] = nonzeroes.values[ rowcounter ][ colcounter ];
-			}
-
-			else{
-
-				continue;
+				colIdx[ ( colcounter * nonzeroes.row_sizes[ rowcounter ] ) + rowcounter ] = nonzeroes.column[ rowcounter ][ colcounter ];
+				value[ ( colcounter * nonzeroes.row_sizes[ rowcounter ] ) + rowcounter ] = nonzeroes.values[ rowcounter ][ colcounter ];
 			}
 
 			++rowcounter;
@@ -451,19 +445,16 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 	}
 
 	for( auto i = 1; i < rowsize; ++i ){
-		
+
 		ptr_counter += nonzeroes.row_sizes[ i ];
 
 		iterPtr[ i ] = ptr_counter;
-	}
-
-	size = *nonzeroes.row_sizes;
-
+	}	
 }
 
 void JDS::build_row( int rowsize ){
 
-	row = new int[ rowsize ];
+	row = new int[ rowsize ]{ 0 };
 
 	for( auto i = 0; i < rowsize; ++i ){
 
