@@ -334,7 +334,7 @@ PairOfArrays JDS::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 			}
 		}
 	}
-
+	
 	for( auto i = 0; i < rowsize; ++i ){
 
 		nonzeroes.column[ i ] = new int[ nonzeroes.row_sizes[ i ] ]{ 0 };
@@ -407,6 +407,7 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 	// NOTE: by sort_rows, rows are already sorted, meaning that max_rowsize = nonzeroes.row_size[ 0 ] already stores the largest row. This loop é redundant
 	for( auto i = 0; i < rowsize; ++i ){
 
+		// Meaning that I could delete this if-block
 		if( max_rowsize < nonzeroes.row_sizes[ i ] ){
 
 			max_rowsize = nonzeroes.row_sizes[ i ];
@@ -425,15 +426,19 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 	int colcounter{ 0 };
 	int ptr_counter{ 0 };
 
+	int index{ 0 };
+
 	while( colcounter < max_rowsize ){
 
 		while( rowcounter < rowsize ){
 
 			// Maybe the error is here?
-			if( colcounter < nonzeroes.row_sizes[ rowcounter ] ){
+			if( index < size ){
 
-				colIdx[ ( colcounter * nonzeroes.row_sizes[ rowcounter ] ) + rowcounter ] = nonzeroes.column[ rowcounter ][ colcounter ];
-				value[ ( colcounter * nonzeroes.row_sizes[ rowcounter ] ) + rowcounter ] = nonzeroes.values[ rowcounter ][ colcounter ];
+				colIdx[ index ] = nonzeroes.column[ rowcounter ][ colcounter ];
+				value[ index ] = nonzeroes.values[ rowcounter ][ colcounter ];
+
+				++index;
 			}
 
 			++rowcounter;

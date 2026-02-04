@@ -1,8 +1,8 @@
 #pragma once
 
 #include <algorithm>
-//#include <iterator>
 
+/// TODO: fix the definition of ALL DESTRUCTORS! Use loops to correcltly delete the 2D-Arrays
 
 struct PairOfArrays{
 
