@@ -1,11 +1,12 @@
 
-//#include "cuda_runtime.h"
-//#include "device_launch_parameters.h"
-#include "\Projetos\Studies_In_Programming\Parallelism_and_Concurrency\Kirk_Code_And_Exercises\Chapter14\CUDA_Sparse_Matrixes\Sparse_Matrixes.cpp"
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#include "\Projetos\Studies_In_Programming\Parallelism_and_Concurrency\Kirk_Code_And_Exercises\Chapter14\CUDA_Sparse_Matrixes\Sparse_Arrays.cpp"
 
 #include <stdio.h>
 #include <iostream>
 #include <random>
+#include <math.h>
 
 int** generate_matrix( int row, int col ){
 
@@ -43,9 +44,9 @@ void print( int**& matrix, int row, int col ){
 	printf( "\n" );
 }
 
-void print( const std::vector<int>& matrix ){
+void print( const int* matrix, int size ){
 
-	for( auto i = 0; i < matrix.size( ); ++i ){
+	for( auto i = 0; i < size; ++i ){
 
 		printf( "%d ", matrix[ i ] );
 	}
@@ -61,25 +62,109 @@ void print( const std::vector<int>& matrix ){
 
 	// PREFIX SUM: scan the histogram, so a to calculate the offset from one row to another
 
+	// Also: csr.colIdx = coo.colIdx and csr.value = coo.value. I.e., we just need to correctly build csr.rowPtrs from coo.rowIdx
 __global__ void COO_CSR_Kernel( COO* input, CSR* output ){
 
 	int globalIndex = ( blockDim.x * blockIdx.x ) + threadIdx.x;
 	
-	std::vector<int> rows{ }; // NOTE: rows might not be in global memory! Careful, here.
+	int* rows{ nullptr }; // NOTE: rows might not be in global memory! Careful, here.
+
+	int maxRows{ 0 };
 
 	// HISTOGRAM: first, divide COO::rowIdx.size() by gridDim.x, so that each block is responsible for equally-sized subarrays of COO::rowIdx
 	//			  second, if the subarray size is greater than blockDim, then, divide subarray.size by blockDim, so that each thread within the block is responsible for the same amount of elements from the subarray
 	//			  third, for a vector rows from 0 to std::max( COO::rowIdx ), find the corresponding element in rows and perform an atomicAdd	
 	if( globalIndex == 0 ){
 
-		int maxRows = *std::max( input -> get_rowIdx( ).begin( ), input -> get_rowIdx( ).end( ) );
+		for( auto i = 0; i < input -> get_size( ); ++i ){
 
-		rows.resize( maxRows, 0 );
+			if( input -> get_rowIdx( )[ i ] > maxRows ){
+
+				maxRows = input -> get_rowIdx( )[ i ];
+			}
+		}
+
+		rows = new int[ maxRows ]{ 0 };
+
+		for( auto i = 0; i < maxRows; ++i ){
+
+			rows[ i ] = i;
+		}
 	}
 
-	if( input -> get_rowIdx( ).size( ) > ( gridDim.x * blockDim.x ) ){
+	int coo_size = input -> get_size( );
 
+	// If the amount of elements in coo_rowIdx is greater than the amount of threads, assign each block to a portion of coo_rowIdx
+	if( coo_size > static_cast<long long int>( gridDim.x * blockDim.x ) ){
 
+		// If the portion assigned to each block is greater than the block, assign each thread to a subportion( with at least one element assigned to each thread )
+		if( ( coo_size / gridDim.x ) > blockDim.x ){
+
+			int elements = static_cast<int>( std::ceil( static_cast<double>( coo_size ) / static_cast<double>( gridDim.x ) ) );
+
+			// Thread coarsening
+			for( auto i = 0; i < elements; ++i ){
+
+				// Boundary checking
+				if( ( globalIndex + i ) < coo_size ){
+
+					for( auto row_idx = 0; row_idx < maxRows; ++row_idx ){
+
+						// Finding the corresponding row
+						if( rows[ row_idx ] == input -> get_rowIdx( )[ globalIndex + i ] ){
+
+							atomicAdd( &rows[ row_idx ], 1 );
+						}
+
+						// NOTE: these continues MIGHT be troublesome.
+						else{
+
+							continue;
+						}
+					}
+				}
+
+				else{
+
+					continue;
+				}
+			}
+		}
+
+		// Else, each thread handles at most one element
+		else{
+
+			for( auto row_idx = 0; row_idx < maxRows; ++row_idx ){
+
+				// Finding the corresponding row
+				if( rows[ row_idx ] == input -> get_rowIdx( )[ globalIndex ] ){
+
+					atomicAdd( &rows[ row_idx ], 1 );
+				}
+
+				else{
+
+					continue;
+				}
+			}
+		}
+	}
+
+	else{
+
+		for( auto row_idx = 0; row_idx < maxRows; ++row_idx ){
+
+			// Finding the corresponding row
+			if( rows[ row_idx ] == input -> get_rowIdx( )[ globalIndex ] ){
+
+				atomicAdd( &rows[ row_idx ], 1 );
+			}
+
+			else{
+
+				continue;
+			}
+		}
 	}
 
 	/// PREFIX SUM: just scan the vector rows
@@ -131,5 +216,5 @@ int main( ){
 	COO coo_mtx{ };
 	coo_mtx.build_COO( matrix, rowsize, colsize );
 
-	print( coo_mtx.get_value( ) );
+	print( coo_mtx.get_value( ), coo_mtx.get_size( ) );
 }
