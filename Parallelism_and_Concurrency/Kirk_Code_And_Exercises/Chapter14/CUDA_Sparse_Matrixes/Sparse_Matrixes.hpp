@@ -1,7 +1,7 @@
 #pragma once
 
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+//#include "cuda_runtime.h"
+//#include "device_launch_parameters.h"
 
 #include <vector>
 
@@ -74,6 +74,7 @@ private:
 	std::vector<int> value{ };
 };
 
+// TODO: I forgot to modify iterPtr to hold the offset between elements from the same row
 class JDS{
 
 public:

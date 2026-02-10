@@ -246,6 +246,7 @@ std::vector<std::vector<int>> JDS::nonzero_matrix( int**& matrix, int rowsize, i
 
 	for( auto i = 0; i < rowsize; ++i ){
 
+		// PROBLEM: this vector has the same name of a field. Change it
 		std::vector<int> row{ };
 
 		for( auto j = 0; j < colsize; ++j ){
@@ -325,7 +326,7 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 	sort_rows( nonzeroes ); // NOTE: maybe let this method be private, since it is not intended to be called by outside code
 	sort_rows( col_nonzeroes );
 
-	int rowcounter{ 0 };
+	int rowcounter{ 0 }; // NOTE: the variable is never used!
 	int colcounter{ 0 };
 
 	// NOTE: since nonzeroes is sorted in descending order, for any 0 <= i < nonzeroes.size( ), we have that the vector
@@ -333,6 +334,7 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 	// NOTE: maybe check for nullptr? In case nonzeroes.empty == true.
 	while( colcounter < nonzeroes.begin( ) -> size( ) ){
 
+		// NOTE: row has the same name as a JDS field
 		for( std::vector<int> row : nonzeroes ){
 
 			if( colcounter < row.size( ) ){
