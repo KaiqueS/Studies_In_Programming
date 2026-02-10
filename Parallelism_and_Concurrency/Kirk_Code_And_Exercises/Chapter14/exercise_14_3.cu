@@ -213,8 +213,13 @@ int main( ){
 
 	print( matrix, rowsize, colsize );
 
-	COO coo_mtx{ };
-	coo_mtx.build_COO( matrix, rowsize, colsize );
+	COO* coo_mtx{ };
+	coo_mtx -> build_COO( matrix, rowsize, colsize );
 
-	print( coo_mtx.get_value( ), coo_mtx.get_size( ) );
+	CSR* csr_mtx{ };
+	csr_mtx -> build_CSR( matrix, rowsize, colsize );
+
+	kernel_setup( coo_mtx, csr_mtx );
+
+	//print( coo_mtx.get_value( ), coo_mtx.get_size( ) );
 }
