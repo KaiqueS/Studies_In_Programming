@@ -3,7 +3,7 @@
 /// COO - BEGIN
 
 // NOTE: I could parallelize this later using tiling to speed things up.
-int COO::count_Zeroes( int**& matrix, int rowSize, int colSize ){
+__host__ __device__  int COO::count_Zeroes( int**& matrix, int rowSize, int colSize ){
 
 	int counter{ 0 };
 
@@ -106,7 +106,7 @@ void COO::reorder( int left_index, int right_index ){
 
 /// CSR - BEGIN
 
-int CSR::count_Zeroes( int**& matrix, int rowSize, int colSize ){
+__host__ __device__ int CSR::count_Zeroes( int**& matrix, int rowSize, int colSize ){
 
 	int counter{ 0 };
 
@@ -468,5 +468,3 @@ void JDS::build_row( int rowsize ){
 }
 
 /// END - JDS
-
-// ------------------

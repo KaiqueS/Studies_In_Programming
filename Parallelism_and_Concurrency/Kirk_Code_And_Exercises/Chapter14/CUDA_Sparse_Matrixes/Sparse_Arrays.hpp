@@ -1,5 +1,8 @@
 #pragma once
 
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+
 #include <algorithm>
 
 /// TODO: fix the definition of ALL DESTRUCTORS! Use loops to correcltly delete the 2D-Arrays
@@ -28,12 +31,12 @@ public:
 	void insert_element( int row, int col, int element );
 	void reorder( int left_index, int right_index );
 
-	int count_Zeroes( int**& matrix, int rowSize, int colSize );
+	__host__ __device__ int count_Zeroes( int**& matrix, int rowSize, int colSize );
 
-	const int* get_rowIdx( ) const{ return rowIdx; }
-	const int* get_colIdx( ) const{ return colIdx; }
-	const int* get_value( ) const{ return value; }
-	const int get_size( ) const{ return size; }
+	__host__ __device__ const int* get_rowIdx( ) const{ return rowIdx; }
+	__host__ __device__ const int* get_colIdx( ) const{ return colIdx; }
+	__host__ __device__ const int* get_value( ) const{ return value; }
+	__host__ __device__ const int get_size( ) const{ return size; }
 
 private:
 
@@ -55,12 +58,12 @@ public:
 	void allocate_CSR( int**&matrix, int rowSize, int colSize );
 	void build_CSR( int**& matrix, int rowSize, int colSize );
 
-	int count_Zeroes( int**& matrix, int rowSize, int colSize );
+	__host__ __device__ int count_Zeroes( int**& matrix, int rowSize, int colSize );
 
-	const int* get_rowPtrs( ) const{ return rowPtrs; }
-	const int* get_colIdx( ) const{ return colIdx; }
-	const int* get_value( ) const{ return value; }
-	const int get_size( ) const{ return size; }
+	__host__ __device__ const int* get_rowPtrs( ) const{ return rowPtrs; }
+	__host__ __device__ const int* get_colIdx( ) const{ return colIdx; }
+	__host__ __device__ const int* get_value( ) const{ return value; }
+	__host__ __device__ const int get_size( ) const{ return size; }
 
 private:
 
