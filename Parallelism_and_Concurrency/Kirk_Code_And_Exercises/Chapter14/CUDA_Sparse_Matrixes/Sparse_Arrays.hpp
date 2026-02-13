@@ -60,9 +60,9 @@ public:
 
 	__host__ __device__ int count_Zeroes( int**& matrix, int rowSize, int colSize );
 
-	__host__ __device__ const int* get_rowPtrs( ) const{ return rowPtrs; }
-	__host__ __device__ const int* get_colIdx( ) const{ return colIdx; }
-	__host__ __device__ const int* get_value( ) const{ return value; }
+	__host__ __device__ int*& get_rowPtrs( ) { return rowPtrs; }
+	__host__ __device__ int*& get_colIdx( ) { return colIdx; }
+	__host__ __device__ int*& get_value( ) { return value; }
 	__host__ __device__ const int get_size( ) const{ return size; }
 
 private:
