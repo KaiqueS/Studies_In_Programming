@@ -63,11 +63,13 @@ void print( const int* matrix, int size ){
 	// PREFIX SUM: scan the histogram, so a to calculate the offset from one row to another
 
 	// Also: csr.colIdx = coo.colIdx and csr.value = coo.value. I.e., we just need to correctly build csr.rowPtrs from coo.rowIdx
-__global__ void COO_CSR_Kernel( COO* input, CSR* output ){
+
+// NOTE: missing syncs! Code is wrong!
+__global__ void COO_CSR_Kernel( COO* input, CSR* output, int* rows ){
 
 	int globalIndex = ( blockDim.x * blockIdx.x ) + threadIdx.x;
 	
-	int* rows{ nullptr }; // NOTE: rows might not be in global memory! Careful, here.
+	//int* rows{ nullptr }; // NOTE: rows might not be in global memory! Careful, here.
 
 	int maxRows{ 0 };
 
@@ -86,7 +88,7 @@ __global__ void COO_CSR_Kernel( COO* input, CSR* output ){
 
 		//cudaMalloc( ( void** ) &rows, maxRows * sizeof( int ) );
 
-		rows = new int[ maxRows ]{ 0 };
+		//rows = new int[ maxRows ]{ 0 };
 
 		for( auto i = 0; i < maxRows; ++i ){
 
@@ -173,12 +175,26 @@ __global__ void COO_CSR_Kernel( COO* input, CSR* output ){
 	}
 
 	/// PREFIX SUM: just scan the vector rows
+	
+	// NOTE: temporary serialized prefix sum. Parallelize it after fixing copy from device to host.
+	if( globalIndex == 0 ){
 
+		for( auto i = 1; i < maxRows; ++i ){
+
+			rows[ i ] += rows[ i - 1 ];
+		}
+	}
+
+
+	/// Passing on the results to CSR output
 	if( globalIndex == 0 ){
 
 		output -> get_colIdx( ) = input -> get_colIdx( );
 		output -> get_value( ) = input -> get_value( );
-		
+		output -> get_size( ) = input -> get_size( );
+
+		output -> get_rowPtrs( ) = new int[ maxRows ];
+
 		for( auto i = 0; i < maxRows; ++i ){
 
 			output -> get_rowPtrs( )[ i ] = rows[ i ];
@@ -188,7 +204,7 @@ __global__ void COO_CSR_Kernel( COO* input, CSR* output ){
 	}
 }
 
-void kernel_setup( COO*& host_input, CSR*& host_output ){
+void kernel_setup( COO*& host_input, CSR* host_output ){
 
 	COO* dev_input{ new COO };
 	CSR* dev_output{ new CSR };
@@ -221,9 +237,14 @@ void kernel_setup( COO*& host_input, CSR*& host_output ){
 	// data from host to these host pointers, then, make the members pointers of dev_input, on the device, point
 	// to the space allocated, on the device, for the host pointers. - 
 	int* rowIdx{ nullptr }, *colIdx{ nullptr }, *value{ nullptr };
+
+	int* rows{ nullptr };
+
 	cudaMalloc( ( void** ) &rowIdx, host_input -> get_size( ) * sizeof( int ) );
 	cudaMalloc( ( void** ) &colIdx, host_input -> get_size( ) * sizeof( int ) );
 	cudaMalloc( ( void** ) &value, host_input -> get_size( ) * sizeof( int ) );
+
+	cudaMalloc( ( void** ) &rows, 5 * sizeof( int ) );
 
 	cudaMemcpy( rowIdx, host_input -> get_rowIdx( ), host_input -> get_size( ) * sizeof( int ), cudaMemcpyHostToDevice );
 	cudaMemcpy( colIdx, host_input -> get_colIdx( ), host_input -> get_size( ) * sizeof( int ), cudaMemcpyHostToDevice );
@@ -245,13 +266,19 @@ void kernel_setup( COO*& host_input, CSR*& host_output ){
 	dim3 blocks{ gridsize };
 	dim3 threads{ blocksize };
 
-	COO_CSR_Kernel<<<blocks, threads>>>( dev_input, dev_output );
+	COO_CSR_Kernel<<<blocks, threads>>>( dev_input, dev_output, rows );
 
-	cudaMemcpy( host_output, dev_output, csr_size, cudaMemcpyDeviceToHost );
+	cudaMemcpy( host_output, dev_output, sizeof( CSR ), cudaMemcpyDeviceToHost );
+	cudaMemcpy( ( host_output -> get_colIdx( ) ), &( dev_output -> get_colIdx( ) ), sizeof( int* ), cudaMemcpyDeviceToHost );
+	cudaMemcpy( ( host_output -> get_value( ) ), &( dev_output -> get_value( ) ), sizeof( int* ), cudaMemcpyDeviceToHost );
+	//cudaMemcpy( &( host_output -> get_size( ) ), &( dev_output -> get_size( ) ), sizeof( int ), cudaMemcpyDeviceToHost );
 
 	cudaFree( dev_input );
 	cudaFree( dev_output );
 	cudaFree( rowIdx );
+	cudaFree( colIdx );
+	cudaFree( value );
+	cudaFree( rows );
 }
 
 int main( ){
@@ -269,6 +296,9 @@ int main( ){
 	coo_mtx -> build_COO( matrix, rowsize, colsize );
 
 	CSR* csr_mtx{ new CSR };
+	//csr_mtx -> get_colIdx( ) = new int[ coo_mtx -> get_size( ) ];
+	//csr_mtx -> get_value( ) = new int[ coo_mtx -> get_size( ) ];
+	//csr_mtx -> get_rowPtrs( ) = new int[ rowsize ];
 	//csr_mtx -> build_CSR( matrix, rowsize, colsize );
 
 	kernel_setup( coo_mtx, csr_mtx );
