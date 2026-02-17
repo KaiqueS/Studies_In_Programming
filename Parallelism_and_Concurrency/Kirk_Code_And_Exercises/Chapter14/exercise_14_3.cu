@@ -193,18 +193,16 @@ __global__ void COO_CSR_Kernel( COO* input, CSR* output, int* rows ){
 		output -> get_value( ) = input -> get_value( );
 		output -> get_size( ) = input -> get_size( );
 
-		output -> get_rowPtrs( ) = new int[ maxRows ];
-
 		for( auto i = 0; i < maxRows; ++i ){
 
 			output -> get_rowPtrs( )[ i ] = rows[ i ];
 		}
 
-		free( rows );
+		//free( rows );
 	}
 }
 
-void kernel_setup( COO*& host_input, CSR* host_output ){
+void kernel_setup( COO*& host_input, CSR*& host_output, int rowsize ){
 
 	COO* dev_input{ new COO };
 	CSR* dev_output{ new CSR };
@@ -218,6 +216,7 @@ void kernel_setup( COO*& host_input, CSR* host_output ){
 	cudaMalloc( ( void** ) &dev_output, csr_size );
 
 	cudaMemcpy( dev_input, host_input, coo_size, cudaMemcpyHostToDevice );
+	cudaMemcpy( dev_output, host_output, csr_size, cudaMemcpyHostToDevice );
 
 	/// NOTE - START
 
@@ -238,13 +237,9 @@ void kernel_setup( COO*& host_input, CSR* host_output ){
 	// to the space allocated, on the device, for the host pointers. - 
 	int* rowIdx{ nullptr }, *colIdx{ nullptr }, *value{ nullptr };
 
-	int* rows{ nullptr };
-
 	cudaMalloc( ( void** ) &rowIdx, host_input -> get_size( ) * sizeof( int ) );
 	cudaMalloc( ( void** ) &colIdx, host_input -> get_size( ) * sizeof( int ) );
 	cudaMalloc( ( void** ) &value, host_input -> get_size( ) * sizeof( int ) );
-
-	cudaMalloc( ( void** ) &rows, 5 * sizeof( int ) );
 
 	cudaMemcpy( rowIdx, host_input -> get_rowIdx( ), host_input -> get_size( ) * sizeof( int ), cudaMemcpyHostToDevice );
 	cudaMemcpy( colIdx, host_input -> get_colIdx( ), host_input -> get_size( ) * sizeof( int ), cudaMemcpyHostToDevice );
@@ -254,6 +249,20 @@ void kernel_setup( COO*& host_input, CSR* host_output ){
 	cudaMemcpy( &( dev_input -> get_colIdx( ) ), &colIdx, sizeof( int* ), cudaMemcpyHostToDevice );
 	cudaMemcpy( &( dev_input -> get_value( ) ), &value, sizeof( int* ), cudaMemcpyHostToDevice );
 	/// NOTE - END
+
+	int* out_rowptr{ new int[ rowsize ]{ 0 } }, *out_colIdx{ new int[ host_input -> get_size( ) ]{ 0 } }, *out_value{ new int[ host_input -> get_size( ) ]{ 0 } };
+	
+	cudaMalloc( ( void** ) &out_rowptr, rowsize * sizeof( int ) ); // NOTE: do not forget to change 5 to match rowsize later!
+	cudaMalloc( ( void** ) &out_colIdx, host_input -> get_size( ) * sizeof( int ) );
+	cudaMalloc( ( void** ) &out_value, host_input -> get_size( ) * sizeof( int ) );
+
+	//cudaMemcpy( out_rowptr, host_output -> get_rowPtrs( ), sizeof( nullptr ), cudaMemcpyHostToDevice ); // NOTE: do not forget to change 5 to match rowsize later!
+	//cudaMemcpy( out_colIdx, host_output -> get_colIdx( ), sizeof( nullptr ), cudaMemcpyHostToDevice );
+	//cudaMemcpy( out_value, host_output -> get_value( ), sizeof( nullptr ), cudaMemcpyHostToDevice );
+
+	cudaMemcpy( &( dev_output -> get_rowPtrs( ) ), &out_rowptr, sizeof( int* ), cudaMemcpyHostToDevice );
+	cudaMemcpy( &( dev_output -> get_colIdx( ) ), &out_colIdx, sizeof( int* ), cudaMemcpyHostToDevice );
+	cudaMemcpy( &( dev_output -> get_value( ) ), &out_value, sizeof( int* ), cudaMemcpyHostToDevice );
 
 	unsigned int gridsize{ 0 }, blocksize{ 0 };
 
@@ -266,12 +275,23 @@ void kernel_setup( COO*& host_input, CSR* host_output ){
 	dim3 blocks{ gridsize };
 	dim3 threads{ blocksize };
 
+	int* rows{ nullptr };
+	cudaMalloc( ( void** ) &rows, rowsize * sizeof( int ) ); // NOTE: do not forget to change 5 to match rowsize later!
+
 	COO_CSR_Kernel<<<blocks, threads>>>( dev_input, dev_output, rows );
 
 	cudaMemcpy( host_output, dev_output, sizeof( CSR ), cudaMemcpyDeviceToHost );
-	cudaMemcpy( ( host_output -> get_colIdx( ) ), &( dev_output -> get_colIdx( ) ), sizeof( int* ), cudaMemcpyDeviceToHost );
-	cudaMemcpy( ( host_output -> get_value( ) ), &( dev_output -> get_value( ) ), sizeof( int* ), cudaMemcpyDeviceToHost );
-	//cudaMemcpy( &( host_output -> get_size( ) ), &( dev_output -> get_size( ) ), sizeof( int ), cudaMemcpyDeviceToHost );
+	cudaMemcpy( &out_rowptr, &( dev_output -> get_rowPtrs( ) ), sizeof( int ), cudaMemcpyDeviceToHost );
+	cudaMemcpy( &out_colIdx, &( dev_output -> get_colIdx( ) ), sizeof( int ), cudaMemcpyDeviceToHost );
+	cudaMemcpy( &out_value, &( dev_output -> get_value( ) ), sizeof( int ), cudaMemcpyDeviceToHost );
+	
+	host_output -> get_rowPtrs( ) = new int[ rowsize ]{ 0 };
+	host_output -> get_colIdx( ) = new int[ host_output -> get_size( ) ]{ 0 };
+	host_output -> get_value( ) = new int[ host_output -> get_size( ) ]{ 0 };
+	
+	cudaMemcpy( ( host_output -> get_rowPtrs( ) ), out_rowptr, rowsize * sizeof( int ), cudaMemcpyDeviceToHost ); // NOTE: remember the 5
+	cudaMemcpy( ( host_output -> get_colIdx( ) ), out_colIdx, host_output -> get_size( ) * sizeof( int ), cudaMemcpyDeviceToHost );
+	cudaMemcpy( ( host_output -> get_value( ) ), out_value, host_output -> get_size( ) * sizeof( int ), cudaMemcpyDeviceToHost );
 
 	cudaFree( dev_input );
 	cudaFree( dev_output );
@@ -296,12 +316,12 @@ int main( ){
 	coo_mtx -> build_COO( matrix, rowsize, colsize );
 
 	CSR* csr_mtx{ new CSR };
-	//csr_mtx -> get_colIdx( ) = new int[ coo_mtx -> get_size( ) ];
-	//csr_mtx -> get_value( ) = new int[ coo_mtx -> get_size( ) ];
-	//csr_mtx -> get_rowPtrs( ) = new int[ rowsize ];
+	//csr_mtx -> get_rowPtrs( ) = new int[ rowsize ]{ 0 };
+	//csr_mtx -> get_colIdx( ) = new int[ coo_mtx -> get_size( ) ]{ 0 };
+	//csr_mtx -> get_value( ) = new int[ coo_mtx -> get_size( ) ]{ 0 };
 	//csr_mtx -> build_CSR( matrix, rowsize, colsize );
 
-	kernel_setup( coo_mtx, csr_mtx );
+	kernel_setup( coo_mtx, csr_mtx, rowsize );
 
 	print( csr_mtx -> get_value( ), csr_mtx -> get_size( ) );
 }
