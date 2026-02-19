@@ -63,7 +63,7 @@ public:
 	__host__ __device__ int*& get_rowPtrs( ) { return rowPtrs; }
 	__host__ __device__ int*& get_colIdx( ) { return colIdx; }
 	__host__ __device__ int*& get_value( ) { return value; }
-	__host__ __device__ const int get_size( ) const{ return size; }
+	__host__ __device__ int& get_size( ) { return size; }
 
 private:
 
@@ -126,4 +126,40 @@ private:
 	int* row{ nullptr };
 
 	int size{ 0 };
+};
+
+class ELL_COO{
+
+public:
+
+	ELL_COO( ){ }
+	~ELL_COO( ){ };
+
+	__host__ __device__ int**& get_ellcol( ){ return ell_colIdx; }
+	__host__ __device__ int**& get_ellval( ){ return ell_value; }
+
+	__host__ __device__ int*& get_coorow( ){ return coo_rowIdx; }
+	__host__ __device__ int*& get_coocol( ){ return coo_colIdx; }
+	__host__ __device__ int*& get_cooval( ){ return coo_value; }
+
+	__host__ __device__ int& get_ell_rowsize( ){ return ell_rowsize; }
+	__host__ __device__ int& get_ell_colsize( ){ return ell_colsize; }
+	
+	__host__ __device__ int& get_coo_size( ){ return coo_size; }
+	__host__ __device__ int& get_coo_zeroes( ){ return coo_zeroes; }
+
+private:
+
+	int** ell_colIdx{ nullptr };
+	int** ell_value{ nullptr };
+
+	int* coo_rowIdx{ nullptr };
+	int* coo_colIdx{ nullptr };
+	int* coo_value{ nullptr };
+
+	int ell_rowsize{ 0 };
+	int ell_colsize{ 0 };
+
+	int coo_size{ 0 };
+	int coo_zeroes{ 0 };
 };
