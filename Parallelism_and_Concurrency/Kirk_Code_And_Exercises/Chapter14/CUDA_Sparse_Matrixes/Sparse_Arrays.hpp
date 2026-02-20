@@ -4,6 +4,7 @@
 #include "device_launch_parameters.h"
 
 #include <algorithm>
+#include <cmath>
 
 /// TODO: fix the definition of ALL DESTRUCTORS! Use loops to correcltly delete the 2D-Arrays
 
@@ -16,6 +17,8 @@ struct PairOfArrays{
 	int** values{ nullptr };
 
 	int* row_sizes{ nullptr };
+	
+	int maximum_rowsize{ 0 };
 };
 
 
@@ -149,7 +152,7 @@ public:
 	__host__ __device__ int& get_coo_zeroes( ){ return coo_zeroes; }
 
 	void build_ELL_COO( int**& matrix, int rowsize, int colsize );
-	void build_padding( int**& matrix, int rowsize, int colsize );
+	//void build_padding( int**& matrix, int rowsize, int colsize );
 
 	//virtual PairOfArrays padded_matrix( int**& matrix, int rowsize, int colsize );
 

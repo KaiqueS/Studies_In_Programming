@@ -257,7 +257,7 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 
 		else{
 
-			continue;
+			continue; // NOTE: this MIGHT be dangerous
 		}
 	}
 
@@ -278,7 +278,9 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 	//std::copy( &padded_columns[ 0 ][ 0 ], &padded_columns[ 0 ][ 0 ] + ( max_rowsize * max_rowsize ), &nonzeroes.column[ 0 ][ 0 ] );
 	//padded_mtx.column = nonzeroes.column;
 	//padded_mtx.values = nonzeroes.values;
-	padded_mtx.row_sizes = new int{ max_rowsize };
+	//padded_mtx.row_sizes = new int{ max_rowsize };
+	padded_mtx.row_sizes = nonzeroes.row_sizes;
+	padded_mtx.maximum_rowsize = max_rowsize;
 
 	return padded_mtx;
 }
@@ -288,19 +290,24 @@ void ELL::build_ELL( int**& matrix, int rowsize, int colsize ){
 
 	PairOfArrays padded_mtx = padded_matrix( matrix, rowsize, colsize );
 
-	colIdx = new int[ *padded_mtx.row_sizes * *padded_mtx.row_sizes ]{ 0 };
-	value = new int[ *padded_mtx.row_sizes * *padded_mtx.row_sizes ]{ 0 };
-	size = ( *padded_mtx.row_sizes * *padded_mtx.row_sizes );
+	//colIdx = new int[ *padded_mtx.row_sizes * *padded_mtx.row_sizes ]{ 0 };
+	colIdx = new int[ padded_mtx.maximum_rowsize * padded_mtx.maximum_rowsize ]{ 0 };
+	//value = new int[ *padded_mtx.row_sizes * *padded_mtx.row_sizes ]{ 0 };
+	value = new int[ padded_mtx.maximum_rowsize * padded_mtx.maximum_rowsize ]{ 0 };
+	//size = ( *padded_mtx.row_sizes * *padded_mtx.row_sizes );
+	size = ( padded_mtx.maximum_rowsize * padded_mtx.maximum_rowsize );
 
-	for( auto col = 0; col < *padded_mtx.row_sizes; ++col ){
+	for( auto col = 0; col < padded_mtx.maximum_rowsize; ++col ){
 
 		// NOTE: I think rowsize is wrong. E.g.: if matrix has one row full of zeroes, this row should be deleted when
 		//		 nonzero_matrix is called, meaning that the nonzero matrix has rowsize - 1 rows.
 		for( auto row = 0; row < rowsize; ++row ){
 		
 			// NOTE: this mapping WORKS but it is not right.
-			colIdx[ ( col * *padded_mtx.row_sizes ) + row ] = padded_mtx.column[ row ][ col ];
-			value[ ( col * *padded_mtx.row_sizes ) + row ] = padded_mtx.values[ row ][ col ];
+			//colIdx[ ( col * *padded_mtx.row_sizes ) + row ] = padded_mtx.column[ row ][ col ];
+			//value[ ( col * *padded_mtx.row_sizes ) + row ] = padded_mtx.values[ row ][ col ];
+			colIdx[ ( col * padded_mtx.maximum_rowsize ) + row ] = padded_mtx.column[ row ][ col ];
+			value[ ( col * padded_mtx.maximum_rowsize ) + row ] = padded_mtx.values[ row ][ col ];
 		}
 	}
 }
@@ -401,7 +408,8 @@ void JDS::build_matrix( int**& matrix, int rowsize, int colsize ){
 
 	sort_rows( nonzeroes, rowsize ); // NOTE: maybe let this method be private, since it is not intended to be called by outside code
 
-	int max_rowsize = nonzeroes.row_sizes[ 0 ];
+	//int max_rowsize = nonzeroes.row_sizes[ 0 ];
+	int max_rowsize = nonzeroes.maximum_rowsize;
 	int total_elements{ 0 };
 
 	// NOTE: by sort_rows, rows are already sorted, meaning that max_rowsize = nonzeroes.row_size[ 0 ] already stores the largest row. This loop é redundant
@@ -486,15 +494,81 @@ ELL_COO::~ELL_COO( ){
 void ELL_COO::build_ELL_COO( int**& matrix, int rowsize, int colsize ){
 
 	PairOfArrays pair = padded_matrix( matrix, rowsize, colsize );
+
+	// IDEA: PairOfArrays has a member rowsizes. Use it to define the cutting point on padded_matrix.
+	//		 Let ell_colIdx and ell_value equal the resulting cut off padded matrix.
+	//		 Build coo_rowIdx/colIdx/value from the part of the padded_matrix NOT assigned to ell_colIdx/value.
+	//		 Remember NOT TO assign PADDED ELEMENTS to the COO matrix. I.e., not all rows/cols go into the COO matrix
+
+	// How to decide the cut size?
+	// I am going to use the ceil( average ), i.e., ceil( padding elements / num_of_rows )
+	int nonzeroes{ 0 }, cutoff{ 0 }, remaining_zeroes{ 0 };
+
+	for( auto i = 0; i < rowsize; ++i ){
+
+		nonzeroes += pair.row_sizes[ i ];
+	}
+
+	cutoff = static_cast<int>( std::ceil( static_cast<double>( nonzeroes ) / static_cast<double>( rowsize ) ) );
+
+	ell_rowsize = rowsize;
+	ell_colsize = cutoff; // NOTE: maybe cutoff - 1?
+
+	ell_colIdx = new int*[ ell_rowsize ];
+	ell_value = new int*[ ell_rowsize ];
+
+	// NOTE: builds ELL representation in ELL_COO
+	for( auto i = 0; i < ell_rowsize; ++i ){
+
+		ell_colIdx[ i ] = new int[ ell_colsize ];
+		ell_value[ i ] = new int[ ell_colsize ];
+
+		for( auto j = 0; j < ell_colsize; ++j ){
+
+			ell_colIdx[ i ][ j ] = pair.column[ i ][ j ];
+			ell_value[ i ][ j ] = pair.values[ i ][ j ];
+		}
+	}
+
+	// NOTE: counts the amount of zeroes on the cutoff ELL representation
+	for( auto i = 0; i < rowsize; ++i ){
+
+		// colsize - pair.row_sizes[ i ] == the amount of zeroes in each row
+		if( ( colsize - pair.row_sizes[ i ] ) >= cutoff ){
+
+			remaining_zeroes += cutoff;
+		}
+
+		else{
+
+			remaining_zeroes += colsize - pair.row_sizes[ i ];
+		}
+	}
+
+	coo_size = ( rowsize * cutoff ) - remaining_zeroes;
+	coo_zeroes = remaining_zeroes;
+
+	coo_rowIdx = new int[ coo_size ];
+	coo_colIdx = new int[ coo_size ];
+	coo_value = new int[ coo_size ];
+
+	int counter{ 0 };
+
+	// NOTE: builds COO representation in ELL_COO
+	for( auto i = 0; i < rowsize; ++i ){
+
+		for( auto j = cutoff; j < colsize; ++j ){
+
+			if( pair.values[ i ][ j ] != 0 ){
+
+				coo_rowIdx[ counter ] = i;
+				coo_colIdx[ counter ] = j;
+				coo_value[ counter ] = pair.values[ i ][ j ];
+
+				++counter;
+			}
+		}
+	}
 }
-
-void ELL_COO::build_padding( int**& matrix, int rowsize, int colsize ){
-
-	PairOfArrays pair = padded_matrix( matrix, rowsize, colsize );
-
-	ell_colIdx = pair.column;
-	ell_value = pair.values;
-}
-
 
 /// END - ELL_COO
