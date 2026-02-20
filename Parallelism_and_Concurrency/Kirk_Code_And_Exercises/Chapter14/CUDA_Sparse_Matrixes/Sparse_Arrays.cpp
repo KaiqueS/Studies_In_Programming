@@ -468,3 +468,33 @@ void JDS::build_row( int rowsize ){
 }
 
 /// END - JDS
+
+/// ELL_COO - BEGIN
+
+ELL_COO::~ELL_COO( ){
+
+	for( auto i = 0; i < ell_rowsize; ++i ){
+
+		delete[ ] ell_colIdx[ i ], ell_value[ i ];
+	}
+
+	delete[ ] ell_colIdx, ell_value;
+
+	delete[ ] coo_rowIdx, coo_colIdx, coo_value;
+}
+
+void ELL_COO::build_ELL_COO( int**& matrix, int rowsize, int colsize ){
+
+	PairOfArrays pair = padded_matrix( matrix, rowsize, colsize );
+}
+
+void ELL_COO::build_padding( int**& matrix, int rowsize, int colsize ){
+
+	PairOfArrays pair = padded_matrix( matrix, rowsize, colsize );
+
+	ell_colIdx = pair.column;
+	ell_value = pair.values;
+}
+
+
+/// END - ELL_COO

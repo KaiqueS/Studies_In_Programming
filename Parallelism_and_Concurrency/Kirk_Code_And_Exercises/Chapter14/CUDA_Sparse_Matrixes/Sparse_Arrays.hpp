@@ -128,12 +128,12 @@ private:
 	int size{ 0 };
 };
 
-class ELL_COO{
+class ELL_COO : public ELL{
 
 public:
 
 	ELL_COO( ){ }
-	~ELL_COO( ){ };
+	~ELL_COO( );
 
 	__host__ __device__ int**& get_ellcol( ){ return ell_colIdx; }
 	__host__ __device__ int**& get_ellval( ){ return ell_value; }
@@ -147,6 +147,11 @@ public:
 	
 	__host__ __device__ int& get_coo_size( ){ return coo_size; }
 	__host__ __device__ int& get_coo_zeroes( ){ return coo_zeroes; }
+
+	void build_ELL_COO( int**& matrix, int rowsize, int colsize );
+	void build_padding( int**& matrix, int rowsize, int colsize );
+
+	//virtual PairOfArrays padded_matrix( int**& matrix, int rowsize, int colsize );
 
 private:
 
