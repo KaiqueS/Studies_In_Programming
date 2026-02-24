@@ -182,9 +182,10 @@ void CSR::build_CSR( int**& matrix, int rowSize, int colSize ){
 PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 	PairOfArrays nonzeroes{ };
-	nonzeroes.column = new int*[ rowsize ];
-	nonzeroes.values = new int*[ rowsize ];
+	nonzeroes.column = new int*[ rowsize ]{ nullptr };
+	nonzeroes.values = new int*[ rowsize ]{ nullptr };
 	nonzeroes.row_sizes = new int[ rowsize ]{ 0 };
+	nonzeroes.num_of_rows = rowsize;
 
 	// Counts the amount of nonzeroes in each row of matrix. Stores the amount in nonzeroes_counter array
 	for( auto i = 0; i < rowsize; ++i ){
@@ -209,6 +210,11 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 		nonzeroes.values[ i ] = new int[ nonzeroes.row_sizes[ i ] ]{ 0 };
 
 		size += nonzeroes.row_sizes[ i ];
+
+		if( nonzeroes.maximum_rowsize < nonzeroes.row_sizes[ i ] ){
+
+			nonzeroes.maximum_rowsize = nonzeroes.row_sizes[ i ];
+		}
 	}
 
 	// NOTE: might have a problem when nonzeroes_counter[ i ] == 0.
@@ -230,7 +236,7 @@ PairOfArrays ELL::nonzero_matrix( int**& matrix, int rowsize, int colsize ){
 
 			else{
 
-				continue;
+				continue; // NOTE: potentially troublesome
 			}
 		}
 	}
@@ -243,6 +249,7 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 	PairOfArrays padded_mtx{ };
 	padded_mtx.column = new int*[ rowsize ]{ nullptr };
 	padded_mtx.values = new int*[ rowsize ]{ nullptr };
+	padded_mtx.row_sizes = new int[ rowsize ]{ 0 };
 
 	PairOfArrays nonzeroes = nonzero_matrix( matrix, rowsize, colsize );
 
@@ -279,8 +286,10 @@ PairOfArrays ELL::padded_matrix( int**& matrix, int rowsize, int colsize ){
 	//padded_mtx.column = nonzeroes.column;
 	//padded_mtx.values = nonzeroes.values;
 	//padded_mtx.row_sizes = new int{ max_rowsize };
-	padded_mtx.row_sizes = nonzeroes.row_sizes;
+	//padded_mtx.row_sizes = nonzeroes.row_sizes;
+	std::copy( &nonzeroes.row_sizes[ 0 ], &nonzeroes.row_sizes[ 0 ] + rowsize, &padded_mtx.row_sizes[ 0 ] );
 	padded_mtx.maximum_rowsize = max_rowsize;
+	padded_mtx.num_of_rows = rowsize;
 
 	return padded_mtx;
 }

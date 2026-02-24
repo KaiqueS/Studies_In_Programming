@@ -11,14 +11,36 @@
 struct PairOfArrays{
 
 	PairOfArrays( ){ }
-	~PairOfArrays( ){ delete[ ] column, values, row_sizes; }
+	PairOfArrays( PairOfArrays&& source ) : column( source.column ), values( source.values ), row_sizes( source.row_sizes ),
+											maximum_rowsize( source.maximum_rowsize ), num_of_rows( source.num_of_rows ){
+
+		source.column = nullptr;
+		source.values = nullptr;
+		source.row_sizes = nullptr;
+
+		source.maximum_rowsize = 0;
+		source.num_of_rows = 0;
+	}
+	~PairOfArrays( ){
+		
+		for( auto i = 0; i < num_of_rows; ++i ){
+
+			delete[ ] column[ i ];
+			delete[ ] values[ i ];
+		}
+
+		delete[ ] column;
+		delete[ ] values;
+		delete[ ] row_sizes;
+	}
 
 	int** column{ nullptr };
 	int** values{ nullptr };
 
 	int* row_sizes{ nullptr };
-	
+
 	int maximum_rowsize{ 0 };
+	int num_of_rows{ 0 };
 };
 
 
@@ -29,7 +51,7 @@ public:
 	COO( ){ }
 	~COO( ){ delete[ ] rowIdx, colIdx, value; }
 
-	void allocate_COO( int**&matrix, int rowSize, int colSize );
+	void allocate_COO( int**& matrix, int rowSize, int colSize );
 	void build_COO( int**& matrix, int rowSize, int colSize );
 	void insert_element( int row, int col, int element );
 	void reorder( int left_index, int right_index );
@@ -58,7 +80,7 @@ public:
 	CSR( ){ }
 	~CSR( ){ delete[ ] rowPtrs, colIdx, value; }
 
-	void allocate_CSR( int**&matrix, int rowSize, int colSize );
+	void allocate_CSR( int**& matrix, int rowSize, int colSize );
 	void build_CSR( int**& matrix, int rowSize, int colSize );
 
 	__host__ __device__ int count_Zeroes( int**& matrix, int rowSize, int colSize );
@@ -106,7 +128,7 @@ private:
 class JDS{
 
 public:
-	
+
 	JDS( ){ }
 	~JDS( ){ delete[ ] iterPtr, colIdx, value, row; }
 
@@ -147,7 +169,7 @@ public:
 
 	__host__ __device__ int& get_ell_rowsize( ){ return ell_rowsize; }
 	__host__ __device__ int& get_ell_colsize( ){ return ell_colsize; }
-	
+
 	__host__ __device__ int& get_coo_size( ){ return coo_size; }
 	__host__ __device__ int& get_coo_zeroes( ){ return coo_zeroes; }
 
